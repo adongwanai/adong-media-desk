@@ -1,0 +1,26 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "bvid": "BV1kZWX62ENY",
+  "aid": 117602311476853,
+  "title": "为什么是最后一期？影视飓风1800万粉丝Q&A！",
+  "pubdate": 1794474000,
+  "stat": {
+   "aid": 117602311476853,
+   "view": 1480896,
+   "danmaku": 32701,
+   "reply": 11618,
+   "favorite": 48843,
+   "coin": 155074,
+   "share": 6386,
+   "now_rank": 0,
+   "his_rank": 1,
+   "like": 191170,
+   "dislike": 0,
+   "evaluation": "",
+   "vt": 0
+  }
+ }
+}

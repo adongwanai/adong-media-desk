@@ -1,0 +1,9 @@
+{
+  "B站": { "url": "https://www.bilibili.com/video/BV1GJ411x7h7/?spm_id_from=333.999", "id": "BV1GJ411x7h7" },
+  "小红书": { "url": "https://www.xiaohongshu.com/explore/65f0c1a2000000000b00a1b2?xsec_token=ABC&xsec_source=pc_search", "id": "65f0c1a2000000000b00a1b2" },
+  "抖音": { "url": "https://www.douyin.com/video/7305123456789012345", "id": "7305123456789012345" },
+  "公众号": { "url": "https://mp.weixin.qq.com/s?__biz=MzA1MjM0NTY3OA==&mid=2247483651&idx=1&sn=0a1b2c3d", "id": "2247483651" },
+  "视频号": { "url": "https://channels.weixin.qq.com/platform/post/detail?feed_id=1420abcdef", "id": "1420abcdef" },
+  "YouTube": { "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123", "id": "dQw4w9WgXcQ" },
+  "X": { "url": "https://x.com/example/status/1856789012345678901?s=20", "id": "1856789012345678901" }
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>阿东IP工作台</title>
+<style>
+  /* DeepSeek Harness 平时提供的颜色、圆角和阴影，独立运行时在这里补一份 */
+  :root {
+    --dsw-font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    --dsw-alias-label-primary: #1c1c1e;
+    --dsw-alias-label-secondary: #4a4a4f;
+    --dsw-alias-label-tertiary: #7c7c82;
+    --dsw-alias-label-caption: #a3a3a8;
+    --dsw-alias-label-primary-inverted: #ffffff;
+    --dsw-alias-button-primary-fill: #1c1c1e;
+    --dsw-alias-button-primary-hover: #3a3a3d;
+    --dsw-alias-border-l2: rgba(0, 0, 0, .08);
+    --dsw-alias-border-l4: rgba(0, 0, 0, .16);
+    --dsw-alias-interactive-bg-hover: rgba(0, 0, 0, .045);
+    --dsw-alias-interactive-bg-active: rgba(0, 0, 0, .08);
+    --dsw-alias-bg-base: #f6f6f8;
+    --dsw-alias-bg-layer-2: #ffffff;
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, .28);
+    --dsw-alias-link: #2a6fdb;
+    --dsw-alias-danger: #d13c35;
+    --dsw-elevation-soft: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(0, 0, 0, .05);
+    --dsw-elevation-panel: 0 4px 24px rgba(0, 0, 0, .12);
+    --dsw-elevation-prominent: 0 12px 40px rgba(0, 0, 0, .16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --dsw-alias-label-primary: #f2f2f4;
+      --dsw-alias-label-secondary: #c4c4c9;
+      --dsw-alias-label-tertiary: #8e8e94;
+      --dsw-alias-label-caption: #6c6c72;
+      --dsw-alias-label-primary-inverted: #1c1c1e;
+      --dsw-alias-button-primary-fill: #f2f2f4;
+      --dsw-alias-button-primary-hover: #d6d6da;
+      --dsw-alias-border-l2: rgba(255, 255, 255, .09);
+      --dsw-alias-border-l4: rgba(255, 255, 255, .18);
+      --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, .06);
+      --dsw-alias-interactive-bg-active: rgba(255, 255, 255, .1);
+      --dsw-alias-bg-base: #121214;
+      --dsw-alias-bg-layer-2: #1e1e21;
+      --dsw-alias-bg-mask-1: rgba(0, 0, 0, .5);
+      --dsw-alias-link: #6aa5ff;
+      --dsw-elevation-soft: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+      --dsw-elevation-panel: 0 4px 24px rgba(0, 0, 0, .5);
+      --dsw-elevation-prominent: 0 12px 40px rgba(0, 0, 0, .6);
+    }
+  }
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: var(--dsw-alias-bg-base); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // 工作台靠这个属性判断深色，跟着系统走
+  const dark = matchMedia('(prefers-color-scheme: dark)')
+  const sync = () => document.body.toggleAttribute('data-ds-dark-theme', dark.matches)
+  sync()
+  dark.addEventListener('change', sync)
+</script>
+<script src="standalone.js"></script>
+</body>
+</html>

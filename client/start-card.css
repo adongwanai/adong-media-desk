@@ -1,0 +1,15 @@
+/* 第一次打开时的四步上手（start-card.jsx） */
+.md-start { flex: none; padding: 22px 24px 18px; gap: 14px; }
+.md-start header { display: flex; flex-direction: column; gap: 2px; }
+.md-root .md-start h2 { font-size: 20px; line-height: 28px; font-weight: 500; }
+/* 四步一排；放不下就排成两行两列，不留 3+1 的单个尾巴 */
+.md-start { container-type: inline-size; }
+.md-start ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@container (max-width: 760px) { .md-start ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 400px) { .md-start ol { grid-template-columns: minmax(0, 1fr); } }
+.md-start li { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.md-start-no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 600; }
+.md-start-copy { flex: 1; }
+.md-start-copy strong { display: block; font-size: 15px; line-height: 22px; font-weight: 500; }
+.md-start-copy p { margin-top: 4px; color: var(--ink3); font-size: 12.5px; line-height: 20px; }
+.md-start-actions { display: flex; flex-wrap: wrap; gap: 6px; }

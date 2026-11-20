@@ -1,0 +1,108 @@
+/* 我的方向、按方向排序、一键源包、内置信息源、选题评分卡。颜色只用 styles.css 顶部的变量。 */
+
+/* 我的方向：两组词并排成一条，窄的时候自动折成两行 */
+.md-focus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+.md-focus-row { flex: 1 1 340px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 28px; }
+.md-focus-label { flex: none; width: 56px; color: var(--ink2); font-size: 12px; line-height: 18px; font-weight: 600; }
+.md-focus-chips { display: contents; }
+.md-focus-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 200px; height: 26px; padding: 0 2px 0 10px; border-radius: 999px; background: var(--hover); color: var(--ink); font-size: 12px; }
+.md-focus-chip > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.md-focus-row.is-blocked .md-focus-chip { color: var(--ink3); text-decoration: line-through; text-decoration-color: var(--ink4); }
+.md-focus-chip .md-icon-btn { width: 20px; height: 20px; border-radius: 999px; }
+.md-focus-add { flex: 1 1 140px; max-width: 220px; min-width: 0; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 2px 0 10px; border-radius: 999px; box-shadow: inset 0 0 0 .5px var(--line-strong); transition: box-shadow .15s; }
+.md-focus-add:focus-within { box-shadow: inset 0 0 0 1px var(--ink3); }
+.md-root .md-focus-add input { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; }
+.md-focus-plus { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; color: var(--ink2); }
+.md-root .md-focus-plus:not(:disabled):hover { background: var(--hover); color: var(--ink); }
+.md-root .md-focus-plus:disabled { opacity: .35; }
+.md-focus-hint { order: 3; flex: 1 1 100%; margin-left: 62px; color: var(--ink3); font-size: 12px; line-height: 18px; }
+
+/* 信息源页：来源管理收成一行摘要，条目尽量靠上 */
+/* 不单独限宽：和其他页一样铺到版心右边，切页时页头右边的控件不左右跳 */
+.md-s-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.md-root .md-s-manage { display: inline-flex; align-items: center; gap: 6px; height: 36px; max-width: 100%; padding: 0 8px 0 12px; border-radius: var(--r-md); background: var(--card); box-shadow: var(--dsw-elevation-soft); color: var(--ink2); font-size: 12.5px; white-space: nowrap; transition: background .15s, color .15s; }
+.md-root .md-s-manage:hover { background: var(--hover); color: var(--ink); }
+.md-s-manage > span:nth-of-type(1) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.md-s-manage-act { color: var(--accent); }
+.md-s-chev { display: inline-flex; color: var(--ink3); transition: transform .2s var(--ease); }
+.md-s-chev.is-open { transform: rotate(180deg); }
+.md-s-bar .md-rank-bar { margin: 0; }
+.md-s-sources { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; border-radius: var(--r-xl); background: color-mix(in srgb, var(--card) 55%, transparent); box-shadow: inset 0 0 0 .5px var(--line); animation: md-rise .3s var(--ease) both; }
+.md-root .md-s-sources :is(.md-s-add, .md-s-feeds, .md-cat, .md-builtin, .md-s-none) { margin: 0; }
+.md-s-errbox { margin-bottom: 12px; color: var(--ink3); font-size: 12.5px; line-height: 19px; }
+.md-s-errbox summary { cursor: pointer; width: fit-content; }
+.md-s-errbox summary:hover { color: var(--ink); }
+.md-s-errbox .md-s-errors { margin: 6px 0 0; padding: 8px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.md-root .md-s-errbox .md-s-errors { color: var(--danger); }
+.md-s-errbox .md-s-errors p { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* 长列表里每行一个毛玻璃按钮，Chromium 软件合成时整段画不出来；列表本来就是实底，不需要模糊 */
+.md-root .md-s-list .md-pill { flex: none; backdrop-filter: none; background: var(--card); }
+.md-root .md-s-list .md-pill:hover { background: var(--hover); }
+.md-s-list li { transition: background .12s; }
+.md-s-list li:hover { background: color-mix(in srgb, var(--ink) 2.5%, transparent); }
+.md-s-entry a { overflow-wrap: anywhere; }
+.md-s-entry small { line-height: 17px; }
+.md-s-kept { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px; color: var(--ink3); font-size: 12px; white-space: nowrap; }
+.md-s-list.is-loading li { display: block; }
+.md-s-list.is-loading .md-skeleton { padding: 4px 0; }
+
+/* 排序开关和每行的理由 */
+.md-rank-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.md-why { margin-left: 8px; color: var(--accent); }
+.md-why.is-miss { color: var(--ink4); }
+.md-multi { margin-right: 8px; padding: 0 6px; border-radius: var(--r-xs); background: var(--hover); color: var(--ink2); }
+.md-s-entry small .md-multi:first-child + .md-why { margin-left: 0; }
+
+/* 一键源包 */
+.md-cat { display: flex; flex-direction: column; gap: 8px; margin: -6px 0 16px; }
+.md-cat-group { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.md-cat-name { flex: none; width: 116px; color: var(--ink2); font-size: 12px; font-weight: 600; }
+.md-cat-row { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.md-cat-item { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--card); box-shadow: var(--dsw-elevation-soft); color: var(--ink); font-size: 12px; white-space: nowrap; }
+.md-root .md-cat-item:hover { background: var(--hover); }
+.md-cat-item.is-added { background: transparent; box-shadow: inset 0 0 0 .5px var(--line); color: var(--ink3); }
+.md-cat-hint { color: var(--ink3); font-size: 12px; line-height: 18px; word-break: break-all; }
+
+/* 内置信息源 */
+.md-builtin { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+.md-builtin-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.md-builtin-head small { font-size: 12px; }
+.md-builtin-group { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: .5px solid var(--line); }
+.md-builtin-switch { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; cursor: pointer; }
+.md-builtin-switch input { accent-color: var(--primary); }
+.md-builtin-switch b { font-size: 13px; font-weight: 600; }
+.md-builtin-switch small { color: var(--ink3); font-size: 12px; }
+.md-builtin-status { display: flex; flex-wrap: wrap; gap: 4px 12px; padding-left: 22px; color: var(--ink3); font-size: 11.5px; line-height: 17px; }
+.md-builtin-status .is-failed { color: var(--ink4); }
+
+/* 灵感卡片上的评分 */
+.md-card-score { flex: none; min-width: 22px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--hover); color: var(--ink2); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.md-card-score.is-partial { font-weight: 500; color: var(--ink3); }
+.md-score-head:has(.md-score-partial) { flex-wrap: wrap; row-gap: 4px; }
+.md-score-head > span:first-child { white-space: nowrap; }
+/* 不够两项时不打总分：知道的那几项单独占一行 */
+.md-score-partial { order: 3; flex-basis: 100%; color: var(--ink2); font-size: 13px; line-height: 18px; }
+.md-card.is-inverted .md-card-score { background: color-mix(in srgb, var(--on-primary) 16%, transparent); color: var(--on-primary); }
+
+/* 选题评分卡 */
+.md-score { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px 14px; border-radius: var(--r-md); box-shadow: inset 0 0 0 .5px var(--line-strong); }
+.md-score-head { display: flex; align-items: baseline; gap: 4px; color: var(--ink2); font-size: 12.5px; }
+.md-score-head > span:first-child { margin-right: 6px; font-weight: 600; }
+.md-score-head b { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.md-score-head small { color: var(--ink3); font-size: 11.5px; }
+.md-score-head .md-link-btn { align-self: center; margin: 0; }
+.md-score-parts { display: flex; flex-direction: column; gap: 8px; }
+.md-score-part { display: grid; grid-template-columns: 76px 44px 1fr; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.md-score-name { color: var(--ink2); }
+.md-score-name small { margin-left: 4px; color: var(--ink4); font-size: 11px; }
+.md-score-part > b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.md-score-part.is-unknown > b { color: var(--ink4); }
+.md-score-why { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; color: var(--ink3); line-height: 18px; }
+.md-score-angle { display: flex; align-items: center; gap: 8px; width: 100%; }
+.md-score-angle input { flex: 1; min-width: 0; accent-color: var(--primary); }
+.md-score-angle input.is-unset { opacity: .4; }
+.md-score-hint { color: var(--ink2); }
+.md-score-hint em { margin: 0 6px; color: var(--ink4); font-style: normal; font-size: 11.5px; }
+.md-score-penalty { color: var(--ink2); font-size: 12.5px; line-height: 18px; }
+.md-score-note { color: var(--ink4); font-size: 11.5px; line-height: 17px; }
+.md-root .md-s-more { align-self: center; margin: 14px auto 0; display: flex; }

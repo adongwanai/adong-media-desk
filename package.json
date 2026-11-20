@@ -1,0 +1,68 @@
+{
+  "name": "dsh-ip-workbench",
+  "version": "0.1.0",
+  "description": "本地优先的 IP 创作工作台，基于 DSH 原生 Agent。每位创作者独立配置账号、文风和素材。",
+  "type": "module",
+  "main": "src/host.js",
+  "exports": {
+    ".": "./src/host.js",
+    "./client": "./dist/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=24",
+    "dsh": ">=0.2.0-rc.2 <0.2.1 || >=0.2.1-0 <0.2.2 || >=0.2.2-0 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/build.mjs && node scripts/standalone.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node --test test/*.test.js",
+    "assets": "python3 scripts/gen-assets.py",
+    "prepack": "npm run build",
+    "dsh": "node scripts/start-dsh.mjs",
+    "check:release": "node scripts/check-release.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "simple-icons": "^16.37.0"
+  },
+  "files": [
+    "src",
+    "dist",
+    "assets",
+    "templates",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "NOTICE",
+    "scripts/standalone.mjs",
+    "scripts/standalone.html",
+    "scripts/start-dsh.mjs",
+    "docs",
+    "RELEASE.md",
+    "CONTRIBUTING.md"
+  ],
+  "private": true
+}

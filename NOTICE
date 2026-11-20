@@ -1,0 +1,94 @@
+dsh-media-desk
+=============
+
+The layout themes, skeleton templates, cover styles and font list used by the
+"长文" and "图文卡片" previews (client/layouts/) come from:
+
+  言起 YANQI by 阿东玩AI
+  https://github.com/adongwanai/yanqi-obsidian
+  Copyright (c) 2026 阿东玩AI / 言起 YANQI
+
+言起 YANQI is a derivative of the open-source Obsidian plugin "Note to RED"
+by Yeban8090, distributed under the MIT License:
+
+  Note to RED
+  https://github.com/Yeban8090/note-to-red
+
+The 言起 YANQI parts included in this repository are licensed by their author
+(阿东玩AI) under the MIT License of this repository. This grant covers only the
+copy shipped here; the 言起 YANQI plugin itself keeps its own license.
+
+Redistributions and derivative versions must keep visible attribution to both
+言起 YANQI / 阿东玩AI and Note to RED / Yeban8090.
+
+The MIT License notice of Note to RED is reproduced below.
+
+------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2025 Yeban8090
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+------------------------------------------------------------------------------
+
+Other third-party work included or ported in this package (all under
+permissive licences; full licence headers are kept in the source files):
+
+- 说人话 shuorenhua — Copyright (c) MrGeDiao — MIT
+  https://github.com/MrGeDiao/shuorenhua
+  (writing-tone rules ported in client/tone-rules.js)
+- Humanizer-zh — Copyright (c) op7418 — MIT
+  https://github.com/op7418/Humanizer-zh
+  (writing-tone rules ported in client/tone-rules.js)
+- auto-editor — WyattBlue — Unlicense
+  https://github.com/WyattBlue/auto-editor
+  (silence margin/smoothing logic ported in client/video/audio.js)
+- Lucide icons — ISC
+  https://lucide.dev
+- newsnow — Copyright (c) 2024 ourongxing — MIT
+  https://github.com/newsnext/newsnow
+  (hot-list endpoints referenced in src/hot.js)
+- follow-builders — zarazhangrui — MIT (as declared in its README)
+  https://github.com/zarazhangrui/follow-builders
+  (public feeds read by src/builtin.js)
+- simple-icons — CC0-1.0. Platform logos are trademarks of their respective
+  owners and are used only to identify the platforms.
+
+The MIT License applies to the MIT-licensed items above:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -1,0 +1,16 @@
+{
+ "code": 200,
+ "status": {
+  "type": "status",
+  "url": "https://x.com/jack/status/20",
+  "id": "20",
+  "text": "just setting up my twttr",
+  "replies": 19251,
+  "reposts": 126444,
+  "likes": 327321,
+  "bookmarks": 25598,
+  "quotes": 8025,
+  "created_at": "Tue Mar 21 20:50:14 +0000 2006",
+  "views": null
+ }
+}

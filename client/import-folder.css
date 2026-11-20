@@ -1,0 +1,42 @@
+/* 导入文件夹：预览表、跳过列表、已导入的文件夹，和卡片上的「导入」小标记 */
+.md-impf-check { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); font-size: 12.5px; min-width: 0; }
+.md-impf-note { font-size: 12px; line-height: 18px; }
+.md-impf-table { max-height: 220px; }
+.md-impf-table td { vertical-align: top; }
+.md-impf-table td small { display: block; color: var(--ink4); font-size: 11px; line-height: 15px; }
+.md-impf-table .md-imp-title { min-width: 220px; }
+.md-impf-skipped { color: var(--ink3); font-size: 12px; }
+.md-impf-skipped summary { cursor: pointer; }
+.md-impf-skipped ul { max-height: 140px; overflow: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.md-impf-skipped li { display: flex; gap: 8px; min-width: 0; }
+.md-impf-skipped li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); }
+.md-impf-skipped li em { flex: none; font-style: normal; }
+.md-impf-dirs { margin-top: 16px; padding-top: 12px; border-top: .5px solid var(--line); }
+.md-root .md-impf-dirs h3 { font-size: 13px; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+.md-impf-dirs li { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: var(--ink3); }
+.md-impf-dir { flex: 1; min-width: 0; }
+.md-impf-dir strong { display: block; color: var(--ink); font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-impf-dir small { display: block; font-size: 11.5px; line-height: 16px; }
+.md-impf-dirs .md-btn { height: 30px; padding: 0 10px; font-size: 12.5px; }
+.md-impf-badge { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--hover); color: var(--ink3); font-size: 10.5px; line-height: 16px; white-space: nowrap; cursor: default; }
+@media (max-width: 560px) {
+  .md-impf-dirs li { flex-wrap: wrap; }
+}
+/* 几个文件夹、「发过了吗」、合篇的组和可能重复的文件 */
+.md-impf-folder { display: flex; flex-direction: column; gap: 6px; }
+.md-impf-path { display: flex; align-items: center; gap: 6px; }
+.md-impf-path input { flex: 1; min-width: 0; }
+.md-impf-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--ink2); font-size: 12.5px; }
+.md-impf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.md-impf-section { color: var(--ink2); font-size: 12.5px; }
+.md-impf-section summary { cursor: pointer; font-weight: 500; }
+.md-impf-groups { max-height: 220px; overflow: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.md-impf-groups li { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: var(--r-md); box-shadow: inset 0 0 0 .5px var(--line); min-width: 0; }
+.md-impf-groups small { color: var(--ink4); font-size: 11px; line-height: 15px; overflow-wrap: anywhere; }
+.md-impf-group-head { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.md-impf-group-head strong { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.md-impf-group-head em { flex: none; font-style: normal; color: var(--ink3); }
+.md-impf-dup { display: flex; flex-direction: column; min-width: 0; color: var(--ink); }
+.md-impf-groups .md-impf-check { align-items: flex-start; }
+.md-impf-groups .md-impf-check input { margin-top: 2px; flex: none; }
+.md-impf-ask .md-seg { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; }

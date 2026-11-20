@@ -1,0 +1,30 @@
+/* 「怎么用」面板（guide.jsx）：左边几件要做的事，右边这件事的几步。窄的时候事情排成一行横着滑。 */
+.md-guide-lead { margin: -4px 0 14px; color: var(--ink3); font-size: 13px; line-height: 20px; }
+.md-guide { container-type: inline-size; display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 14px; min-height: 0; }
+.md-guide-tasks { display: flex; flex-direction: column; gap: 4px; }
+.md-root .md-guide-tasks button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 12px; border-radius: var(--r-md); color: var(--ink2); text-align: left; transition: background .15s, color .15s; }
+.md-guide-tasks button:hover { background: var(--hover); color: var(--ink); }
+.md-root .md-guide-tasks button.is-on { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.md-guide-tasks button svg { flex: none; margin-top: 2px; color: var(--ink3); }
+.md-guide-tasks button.is-on svg { color: var(--accent); }
+.md-guide-tasks span { display: flex; flex-direction: column; min-width: 0; }
+.md-guide-tasks strong { font-size: 13.5px; line-height: 20px; font-weight: 500; }
+.md-guide-tasks small { color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-guide-steps { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.md-guide-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 10px; border-radius: var(--r-md); }
+.md-guide-steps li.is-next { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.md-guide-no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hover); color: var(--ink2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.md-guide-steps li.is-next .md-guide-no { background: var(--primary); color: var(--on-primary); }
+.md-guide-steps p { margin: 0; color: var(--ink); font-size: 13px; line-height: 21px; }
+.md-guide-steps p .md-keys { margin: 0 3px; }
+.md-guide-steps .md-btn { flex: none; white-space: nowrap; }
+.md-guide-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 14px; padding-top: 12px; border-top: .5px solid var(--line); color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-guide-foot span { flex: 1 1 240px; }
+@container (max-width: 620px) {
+  .md-guide { grid-template-columns: minmax(0, 1fr); }
+  .md-guide-tasks { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .md-root .md-guide-tasks button { flex: none; width: auto; }
+  .md-guide-tasks small { display: none; }
+  .md-guide-steps li { grid-template-columns: 24px minmax(0, 1fr); }
+  .md-guide-steps .md-btn { grid-column: 2; justify-self: start; }
+}

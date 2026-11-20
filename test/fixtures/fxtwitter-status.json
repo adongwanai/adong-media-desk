@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "status": {
+    "type": "status",
+    "url": "https://x.com/example/status/1",
+    "id": "2109673430245421415",
+    "text": "A sample public post used as a test fixture.",
+    "replies": 19,
+    "reposts": 3,
+    "likes": 89,
+    "bookmarks": 21,
+    "quotes": 2,
+    "created_at": "Mon Oct 12 15:51:56 +0000 2026",
+    "created_timestamp": 1791820316,
+    "views": 15328,
+    "lang": "en",
+    "author": {
+      "screen_name": "example"
+    }
+  }
+}

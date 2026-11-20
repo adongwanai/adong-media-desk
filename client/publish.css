@@ -1,0 +1,129 @@
+/* 发布页：每篇成稿一张卡片，下面一排平台状态；颜色全部走 styles.css 顶部的 token，明暗主题自动跟随。 */
+.md-pub-rule { display: flex; flex-direction: column; gap: 6px; margin: 0 0 16px; padding: 10px 14px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--dsw-elevation-soft); color: var(--ink2); font-size: 12.5px; line-height: 19px; }
+.md-pub-rule > p { display: flex; align-items: flex-start; gap: 8px; }
+.md-pub-rule > p svg { flex: none; margin-top: 2.5px; color: var(--accent); }
+.md-pub-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* 搜索和筛选 */
+.md-pub-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.md-pub-tools .md-search { width: 240px; }
+.md-pub-tools .md-seg button { font-variant-numeric: tabular-nums; }
+.md-pub-select { position: relative; display: inline-flex; align-items: center; height: 36px; border-radius: var(--r-md); background: var(--card); box-shadow: inset 0 0 0 .5px var(--line-strong); color: var(--ink3); }
+.md-root .md-pub-select select { appearance: none; height: 100%; padding: 0 30px 0 12px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
+.md-pub-select:focus-within { box-shadow: inset 0 0 0 1px var(--ink3); }
+.md-pub-select > svg { position: absolute; right: 10px; pointer-events: none; }
+.md-root .md-pub-more { align-self: center; margin-top: 4px; }
+
+/* 一篇一行：折叠时只有标题和一排平台小图标 */
+.md-pub-row { min-width: 0; padding: 12px 14px; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); transition: box-shadow .2s; }
+.md-pub-row.is-open { padding-bottom: 16px; box-shadow: 0 0 0 .5px var(--line-strong), var(--dsw-elevation-soft); }
+.md-pub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+/* 小封面：和排期页同一套竖版文字封面（112×144），有封面图时裁成同样比例 */
+.md-root .md-pub-thumb { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 46px; border-radius: var(--r-xs); overflow: hidden; background: var(--hover); box-shadow: 0 0 0 .5px var(--line); color: var(--ink2); font-family: var(--serif); font-size: 16px; transition: transform .25s var(--ease); }
+.md-root .md-pub-thumb:hover { transform: rotate(-2deg) scale(1.04); }
+.md-pub-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.md-pub-copy { flex: 1 1 260px; min-width: 0; }
+.md-root .md-pub-copy h3 { font-size: 14.5px; line-height: 21px; font-weight: 500; }
+.md-root .md-pub-copy h3 button { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+.md-pub-copy h3 button:hover { color: var(--accent); }
+.md-pub-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-pub-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.md-root .md-pub-summary { flex: none; display: inline-flex; align-items: center; gap: 10px; max-width: 100%; min-height: 36px; margin-left: auto; padding: 4px 6px 4px 8px; border-radius: var(--r-md); transition: background .15s; }
+.md-root .md-pub-summary:hover { background: var(--hover); }
+.md-pub-dots { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.md-pub-dot { position: relative; display: inline-flex; border-radius: 6px; opacity: .32; filter: grayscale(1); transition: opacity .15s, filter .15s; }
+.md-pub-dot .md-b-mark { border-radius: 5px; }
+.md-pub-dot.is-copied, .md-pub-dot.is-drafted { opacity: .75; filter: none; }
+.md-pub-dot.is-published { opacity: 1; filter: none; box-shadow: 0 0 0 1.5px var(--card), 0 0 0 3px var(--accent); }
+.md-pub-dot.is-drafted::after, .md-pub-dot.is-copied::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--card); }
+.md-pub-dot.is-copied::after { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 1.5px var(--card); }
+/* 排期里选的平台：虚线框标出来，但颜色不点亮，免得看成已经发了 */
+.md-pub-dot.is-planned.is-none { opacity: .6; outline: 1px dashed var(--ink3); outline-offset: 1px; }
+.md-pub-count { flex: none; min-width: 64px; padding: 0 10px; border-radius: 999px; background: var(--hover); color: var(--ink3); font-size: 12px; line-height: 24px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.md-pub-count.is-on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.md-pub-chev { display: inline-flex; color: var(--ink3); transition: transform .2s var(--ease); }
+.md-pub-chev.is-open { transform: rotate(180deg); }
+.md-pub-body { animation: md-rise .25s var(--ease) both; }
+.md-pub-sync { display: flex; justify-content: flex-end; margin-top: 8px; }
+/* 默认只摆大屏上选的平台，其余收在这一行后面 */
+.md-root .md-pub-all { margin-top: 8px; padding: 2px 0; color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-root .md-pub-all:hover { color: var(--ink); text-decoration: underline; }
+.md-field-error { color: var(--danger); }
+.md-pub-pick { margin-top: 10px; color: var(--ink3); font-size: 12px; line-height: 18px; }
+
+.md-pub-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(144px, 1fr)); gap: 6px; margin-top: 12px; }
+.md-root .md-pub-chip { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 44px; padding: 0 10px 0 8px; border-radius: var(--r-md); border: .5px solid var(--line); background: transparent; transition: background .15s, border-color .15s, box-shadow .15s; }
+.md-pub-chip:hover { background: var(--hover); }
+.md-pub-chip-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.md-pub-chip-text strong { font-size: 12.5px; line-height: 17px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-pub-chip-text small { color: var(--ink4); font-size: 11px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-pub-chip > svg { flex: none; }
+/* 排期里选的平台：右上角一个小点 */
+.md-pub-chip.is-planned::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.md-root .md-pub-chip.is-copied { background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.md-pub-chip.is-copied small, .md-pub-chip.is-copied > svg { color: var(--accent); }
+.md-root .md-pub-chip.is-drafted { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.md-pub-chip.is-drafted small, .md-pub-chip.is-drafted > svg { color: var(--accent); font-weight: 500; }
+.md-root .md-pub-chip.is-published { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.md-pub-chip.is-published small { color: color-mix(in srgb, var(--on-primary) 78%, transparent); }
+.md-pub-chip.is-published.is-planned::after { background: var(--on-primary); }
+.md-root .md-pub-chip.is-active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+.md-pub-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: var(--r-lg); background: var(--hover); animation: md-rise .25s var(--ease) both; }
+.md-pub-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--ink2); font-size: 12.5px; line-height: 19px; }
+.md-root .md-pub-link { display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-size: 12px; }
+.md-pub-link:hover { text-decoration: underline; }
+.md-pub-tip { display: inline-flex; }
+.md-pub-actions .md-btn svg { flex: none; }
+
+/* 三级进度的图例：复制去发布 / 推到草稿 / 已发布，色块和平台格子一致 */
+.md-pub-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 0 22px; color: var(--ink3); font-size: 12px; line-height: 18px; list-style: none; }
+.md-pub-legend li { display: inline-flex; align-items: center; gap: 6px; }
+/* 图例和折叠行里的小图标一致：空心点＝已复制，实心点＝草稿，描边＝已发布 */
+.md-pub-legend i { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.md-pub-legend .is-copied i { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.md-pub-legend .is-drafted i { background: var(--accent); }
+.md-pub-legend .is-published i { width: 10px; height: 10px; border-radius: 3px; box-shadow: 0 0 0 1.5px var(--accent); }
+
+/* 格子里知道链接时，右边放一个直达按钮（和格子是兄弟元素，不嵌套按钮） */
+.md-pub-chips > li { position: relative; min-width: 0; }
+.md-root .md-pub-chips > li.has-link .md-pub-chip { padding-right: 64px; }
+.md-root .md-pub-chip-link { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 2px; max-width: 58px; padding: 0 5px; border-radius: var(--r-xs); color: var(--accent); font-size: 11px; line-height: 20px; white-space: nowrap; overflow: hidden; }
+.md-pub-chip-link:hover { background: var(--hover); text-decoration: underline; }
+.md-root .md-pub-chip-link.is-published { color: var(--on-primary); }
+.md-root .md-pub-chip-link.is-published:hover { background: color-mix(in srgb, var(--on-primary) 16%, transparent); }
+.md-pub-chip-link svg { flex: none; }
+
+/* 公众号公开发布的确认框 */
+.md-pubc { display: flex; flex-direction: column; gap: 12px; }
+.md-pubc-warn { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 10%, transparent); border: .5px solid color-mix(in srgb, var(--danger) 40%, transparent); color: var(--ink); font-size: 13px; line-height: 20px; }
+.md-pubc-warn strong { color: var(--danger); font-weight: 600; }
+.md-pubc-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; line-height: 19px; }
+.md-pubc-facts dt { color: var(--ink3); }
+.md-pubc-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.md-pubc-hint { color: var(--ink3); font-size: 12px; line-height: 18px; }
+/* 公众号提交了但没拿到明确结果：平静地说明，先去后台看 */
+.md-pub-unknown { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border-radius: var(--r-md); background: color-mix(in srgb, var(--warn) 10%, var(--card)); color: var(--ink); font-size: 12.5px; line-height: 19px; }
+.md-pub-unknown > svg { flex: none; color: var(--warn); }
+.md-pub-unknown > span { flex: 1 1 240px; min-width: 0; }
+.md-pubc-wait { display: flex; align-items: center; gap: 10px; color: var(--ink2); font-size: 12.5px; }
+
+/* 多平台草稿同步 */
+.md-sync { display: flex; flex-direction: column; gap: 12px; }
+.md-sync-note, .md-sync-hint { color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-sync-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--hover); color: var(--ink2); font-size: 12.5px; line-height: 19px; }
+.md-sync-state.is-ok { color: var(--accent); }
+.md-sync-state.is-bad span { flex: 1; min-width: 0; color: var(--ink); }
+.md-sync-state.is-warn { color: var(--warn); }
+.md-sync-state.is-warn span { flex: 1; min-width: 0; color: var(--ink); }
+.md-sync-list { display: flex; flex-direction: column; gap: 6px; list-style: none; }
+.md-sync-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 10px; border-radius: var(--r-md); border: .5px solid var(--line); }
+.md-sync-list .md-check { display: inline-flex; align-items: center; gap: 8px; }
+.md-sync-list small { color: var(--ink3); font-size: 12px; }
+.md-sync-result { display: inline-flex; align-items: center; gap: 8px; flex-basis: 100%; font-size: 12px; line-height: 18px; }
+.md-sync-result.is-ok { color: var(--accent); }
+.md-sync-result.is-bad { color: var(--danger); }
+.md-sync-check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.md-sync-check small { flex: 1; min-width: 200px; color: var(--ink3); font-size: 12px; line-height: 18px; }
+.md-sync-check small.is-ok { color: var(--accent); }
+.md-sync-check small.is-bad { color: var(--danger); }

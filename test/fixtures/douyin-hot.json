@@ -1,0 +1,36 @@
+{
+ "data": {
+  "active_time": "2026-11-13 03:47:02",
+  "trending_desc": "实时上升热点",
+  "word_list": [
+   {
+    "position": 1,
+    "word": "烟火美食夯吃挑战开赛了",
+    "hot_value": 11101479,
+    "sentence_id": "2742749",
+    "label": 0,
+    "word_type": 1,
+    "event_time": 1794471223
+   },
+   {
+    "position": 2,
+    "word": "秋冬落地签是一杯warm drink",
+    "hot_value": 11096760,
+    "sentence_id": "2742579",
+    "label": 3,
+    "word_type": 1,
+    "event_time": 1794467848
+   },
+   {
+    "position": 3,
+    "word": "亚太之问中国作答",
+    "hot_value": 10916344,
+    "sentence_id": "2743432",
+    "label": 0,
+    "word_type": 1,
+    "event_time": 1794489767
+   }
+  ]
+ },
+ "status_code": 0
+}
