@@ -1,7 +1,7 @@
 // 首页：一句话记一个灵感。灵感可以散落在空间里，也可以按时间排成信息流。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
-import { captureFile, captureFiles, captureUrl, dispatchOps, openItem, setDesk, toast, useDesk } from './desk.js'
+import { captureFile, captureFiles, captureUrl, dispatchOps, extractClipboardFiles, launchIdea, openItem, setDesk, toast, uploadAttachment, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
@@ -73,9 +73,30 @@ function Inline({ src }) {
   return <img className="md-inline-pic" src={src} alt="" draggable={false} onError={() => setFailed(true)} />
 }
 
-/** 首屏那句话：有图、有字、有数字，下面是一句话记灵感和最近的邮票。 */
+const GOAL_OPTS = [
+  { value: 'xhs', label: '图文卡片' },
+  { value: 'article', label: '公众号长文' },
+  { value: 'script', label: '口播稿' },
+  { value: 'both', label: '长文+口播' },
+]
+
+const MODE_OPTS = [
+  { value: 'auto', label: '自动模式' },
+  { value: 'A', label: 'A · 争议判断' },
+  { value: 'B', label: 'B · 故事吐槽' },
+  { value: 'C', label: 'C · 教程路径' },
+  { value: 'D', label: 'D · 真诚分享' },
+]
+
+function extractUrls(str) {
+  return [...new Set((String(str ?? '').match(/https?:\/\/[^\s<>)"'，。；！？]+/gi) ?? []))]
+}
+
+/** 首屏那句话：有图、有字、有数字，下面是极简渐进胶囊（既能随手记一句灵感，也能拖入任意附件写 Brief 马上成稿）。 */
 function Hero() {
   const items = useDesk(s => s.state.items)
+  const styles = useDesk(s => s.state.styles ?? [])
+  const activeStyleId = useDesk(s => s.state.activeStyleId ?? '')
   const roots = items.filter(isIdea)
   // 和内容页、导航角标同一套数：灵感墙只放自己记的，导入的灵感另外说一句
   const counts = pieceCounts(items)
@@ -87,28 +108,133 @@ function Hero() {
   const streak = computeStreak(items)
   const pic = list => list.map(posterOf).find(Boolean)
   const related = useDesk(s => s.related)
+
   const [text, setText] = React.useState('')
-  const submit = async (event) => {
-    event.preventDefault()
-    const value = text.trim()
-    if (!value) return
-    setText('')
-    if (/^https?:\/\//i.test(value)) return captureUrl(value)
-    // 贴的是一个本地 Markdown 路径：读文件当正文，不要把路径记成标题
-    if (looksLikeNotePath(value)) {
-      try {
-        await captureFile(value)
-      } catch (err) {
-        toast(err.message, { error: true })
+  const [focused, setFocused] = React.useState(false)
+  const [dragging, setDragging] = React.useState(false)
+  const [uploading, setUploading] = React.useState(false)
+  const [submitting, setSubmitting] = React.useState(false)
+  const [attachments, setAttachments] = React.useState([])
+  const [goal, setGoal] = React.useState('xhs')
+  const [mode, setMode] = React.useState('auto')
+  const [styleId, setStyleId] = React.useState(activeStyleId)
+  const areaRef = React.useRef(null)
+  const fileRef = React.useRef(null)
+  const boxRef = React.useRef(null)
+
+  React.useEffect(() => { setStyleId(activeStyleId) }, [activeStyleId])
+
+  React.useLayoutEffect(() => {
+    const el = areaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 136)}px`
+  }, [text])
+
+  const expanded = focused || Boolean(text.trim()) || attachments.length > 0 || uploading || submitting
+  const runningItems = React.useMemo(() => items.filter(i => i.production?.status === 'running'), [items])
+  const runningKey = runningItems.map(i => i.id).join(',')
+  React.useEffect(() => {
+    if (!runningKey) return undefined
+    const stops = runningKey.split(',').filter(Boolean).slice(0, 3).map(id => watchProduction(id))
+    return () => { for (const stop of stops) stop() }
+  }, [runningKey])
+  const goLabel = goal === 'xhs' ? t('生成笔记') : goal === 'script' ? t('生成口播') : t('开始写稿')
+
+  const addFiles = async (fileList) => {
+    const list = [...(fileList ?? [])].slice(0, 20)
+    if (!list.length) return
+    setUploading(true)
+    try {
+      const uploaded = []
+      for (const file of list) {
+        const res = await uploadAttachment(file)
+        if (res?.attachment) uploaded.push(res.attachment)
       }
-      return
+      if (uploaded.length) {
+        setAttachments(prev => [...prev, ...uploaded].slice(0, 30))
+        areaRef.current?.focus()
+      }
+    } catch (err) {
+      toast(err.message || String(err), { error: true })
+    } finally {
+      setUploading(false)
     }
-    // 记下的同时，把提到同一件事的旧灵感拉到眼前
-    const ids = relatedIdeas(roots, value)
-    setDesk({ related: ids.length ? { query: value, ids, newId: null } : null })
-    await dispatchOps([{ op: 'add_item', kind: 'note', title: value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 60), body: value.length > 60 ? value : '' }], { label: t('记下灵感') })
   }
+
+  const resetComposer = () => {
+    setText('')
+    setAttachments([])
+    setFocused(false)
+  }
+
+  const saveOnly = async () => {
+    const value = text.trim()
+    if ((!value && !attachments.length) || submitting || uploading) return
+    setSubmitting(true)
+    try {
+      if (!attachments.length && /^https?:\/\//i.test(value) && !/\s/.test(value)) {
+        await captureUrl(value)
+        resetComposer()
+        return
+      }
+      if (!attachments.length && looksLikeNotePath(value) && !value.includes('\n')) {
+        await captureFile(value)
+        resetComposer()
+        return
+      }
+      if (!attachments.length) {
+        const ids = relatedIdeas(roots, value)
+        setDesk({ related: ids.length ? { query: value, ids, newId: null } : null })
+      }
+      const urls = extractUrls(value)
+      const firstLine = value.split(/[。！？\n]|[.!?](?=\s|$)/)[0]?.trim().slice(0, 60) || ''
+      const res = await launchIdea({
+        title: firstLine,
+        body: value.length > firstLine.length ? value : '',
+        attachments,
+        urls,
+        styleId: styleId || undefined,
+        goal,
+        ...(mode !== 'auto' ? { creation: { mode } } : {}),
+        startNow: false,
+      })
+      if (res) resetComposer()
+    } catch (err) {
+      toast(err.message, { error: true })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const startDrafting = async () => {
+    const value = text.trim()
+    if ((!value && !attachments.length) || submitting || uploading) return
+    setSubmitting(true)
+    try {
+      const urls = extractUrls(value)
+      const firstLine = value.split(/[。！？\n]|[.!?](?=\s|$)/)[0]?.trim().slice(0, 56) || ''
+      const prompt = value || t('请阅读我挂载的全部附件，提炼核心价值并按我的个人风格直接成稿。')
+      const res = await launchIdea({
+        title: firstLine,
+        body: value,
+        prompt,
+        attachments,
+        urls,
+        styleId: styleId || undefined,
+        goal,
+        ...(mode !== 'auto' ? { creation: { mode } } : {}),
+        startNow: true,
+      })
+      if (res) resetComposer()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const now = new Date()
+  const canAct = Boolean(text.trim() || attachments.length) && !submitting && !uploading
+
   return (
     <section className="md-hero" onPointerDown={e => e.stopPropagation()}>
       <p className="md-hero-date">{now.getFullYear()} · {t('{m} 月 {d} 日', { m: now.getMonth() + 1, d: now.getDate(), mon: now.toLocaleString('en-US', { month: 'short' }) })} · {t(WEEKDAYS[now.getDay()])}</p>
@@ -119,11 +245,149 @@ function Hero() {
         <br />
         {t('你已经连续记录')} <b className="md-hero-streak">{t('{n} 天', { n: streak, s: plural(streak, '', 's') })}</b>{t('。')}
       </h1>
-      <form className="md-hero-input" onSubmit={submit}>
-        <Icon name="spark" size={16} />
-        <input value={text} onChange={e => setText(e.target.value)} placeholder={t('记下一个灵感，或贴一个链接')} aria-label={t('记下灵感')} />
-        <button type="submit" className="md-send" aria-label={t('记下')} disabled={!text.trim()}><Icon name="send" size={15} /></button>
+
+      <form
+        ref={boxRef}
+        className={`md-hero-composer ${expanded ? 'is-expanded' : ''} ${dragging ? 'is-drag' : ''}`}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (attachments.length || text.includes('\n') || text.trim().length > 36) startDrafting()
+          else saveOnly()
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          if (!boxRef.current?.contains(e.relatedTarget)) setFocused(false)
+        }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true) }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
+        onDrop={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setDragging(false)
+          if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files)
+        }}
+        onWheel={e => e.stopPropagation()}
+      >
+        {attachments.length > 0 ? (
+          <div className="md-hero-atts" aria-label={t('已添加附件')}>
+            {attachments.map(att => (
+              <span key={att.id} className="md-att-chip" title={att.name}>
+                <Icon name={att.mime?.startsWith('image/') ? 'image' : 'fileText'} size={12} />
+                <span>{att.name}</span>
+                <button type="button" aria-label={t('移除附件')} onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))}>
+                  <Icon name="close" size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="md-hero-row">
+          {!expanded ? (
+            <button
+              type="button"
+              className="md-hero-plus"
+              title={t('添加参考附件（PDF / 图片 / 文档 / 表格 / 代码，也可直接拖入）')}
+              aria-label={t('添加参考附件')}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Icon name="plus" size={16} />
+            </button>
+          ) : null}
+          <textarea
+            ref={areaRef}
+            rows={1}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onPaste={(e) => {
+              const pasted = extractClipboardFiles(e.clipboardData)
+              if (pasted.length) {
+                e.preventDefault()
+                addFiles(pasted)
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault()
+                startDrafting()
+              } else if (e.key === 'Enter' && !e.shiftKey && !expanded) {
+                e.preventDefault()
+                saveOnly()
+              }
+            }}
+            placeholder={t('记下一个灵感，或拖入附件、写下观点马上成稿…')}
+            aria-label={t('记下灵感')}
+          />
+          {!expanded ? (
+            <button type="submit" className="md-send" aria-label={t('记下')} disabled={!canAct}>
+              <Icon name="send" size={15} />
+            </button>
+          ) : null}
+        </div>
+
+        {expanded ? (
+          <div className="md-hero-bar">
+            <div className="md-hero-picks">
+              <button type="button" className="md-hero-chip" disabled={uploading} onClick={() => fileRef.current?.click()} title={t('支持 PDF、Word/Excel、图片、Markdown、CSV、字幕、代码等，由原生会话直接解析')}>
+                <Icon name="plus" size={12} />
+                <span>{uploading ? t('上传中…') : t('附件')}</span>
+              </button>
+              {styles.length > 0 ? (
+                <label className="md-hero-select" title={t('写作风格')}>
+                  <Icon name="pen" size={11} />
+                  <select value={styleId} onChange={e => setStyleId(e.target.value)} aria-label={t('写作风格')}>
+                    {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              <label className="md-hero-select" title={t('产出目标')}>
+                <select value={goal} onChange={e => setGoal(e.target.value)} aria-label={t('产出目标')}>
+                  {GOAL_OPTS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.label)}</option>)}
+                </select>
+              </label>
+              <label className="md-hero-select" title={t('内容模式')}>
+                <select value={mode} onChange={e => setMode(e.target.value)} aria-label={t('内容模式')}>
+                  {MODE_OPTS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.label)}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="md-hero-btns">
+              <button type="button" className="md-hero-quiet" disabled={!canAct} onClick={saveOnly} title={t('仅保存为灵感卡片，稍后再写')}>
+                {t('记下')}
+              </button>
+              <button type="button" className="md-hero-go" disabled={!canAct} onClick={startDrafting} title={t('保存并立即进入工作区开始写稿（⌘+Enter）')}>
+                <Icon name="spark" size={12} />
+                <span>{submitting ? t('正在进入成稿台…') : goLabel}</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          multiple
+          onChange={(e) => {
+            const list = e.target.files
+            e.target.value = ''
+            addFiles(list)
+          }}
+        />
       </form>
+      {runningItems.length > 0 ? (
+        <div className="md-hero-running" role="status">
+          {runningItems.slice(0, 2).map(r => (
+            <button key={r.id} type="button" className="md-hero-running-pill" onClick={() => openItem(r.id)}>
+              <span className="md-live-dot" aria-hidden="true" />
+              <span className="md-shimmer">{t('正在成稿')}</span>
+              <b>《{(r.production?.title || r.title || t('未命名选题')).slice(0, 22)}》</b>
+              <span className="md-hero-running-go">{t('查看实时进度 →')}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {counts.importedIdeas ? (
         <p className="md-hero-related">
           <span>{t('另有 {n} 条导入的灵感在「内容」里', { n: counts.importedIdeas })}</span>

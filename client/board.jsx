@@ -1,12 +1,14 @@
 // 大屏：打开就能看全的一页。最近的几条稿子轮播、粉丝合计和每日净增、按规则算出的几句分析，下面一排平台卡片。
 import React from 'react'
 import { GhostBars, NetBars, PlatformMark, colorOf } from './board-charts.jsx'
-import { AutoReadStatus, PlatformCard, autoReadFollowers, editAccountLinks, logFollowers, readAccountsNow } from './board-accounts.jsx'
+import { AutoReadStatus, PlatformCard, approxText, autoReadFollowers, editAccountLinks, logFollowers, readAccountsNow } from './board-accounts.jsx'
+import { openInBrowser } from './browser.js'
 import { CollectEntry } from './collect-entry.jsx'
 import { IncomeTile } from './board-income.jsx'
 import { boardAgeLine } from '../src/age-compare.js'
 import { typeCover } from './cover.js'
-import { dispatchOps, fetchBoard, openItem, refreshPublic, setDesk, toast, useDesk } from './desk.js'
+import { dispatchOps, fetchBoard, openItem, openPublish, refreshPublic, setDesk, toast, useDesk } from './desk.js'
+import { openQuickCapture } from './quick-capture.js'
 import { StartCard, useFreshDesk } from './start-card.jsx'
 import { t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton, Segmented, Swap } from './ui.jsx'
@@ -16,6 +18,8 @@ import { ACCOUNT_PLATFORMS, compact, dayKey, displayItem, fmtDate, fmtWhen, isPu
 export { PlatformMark, autoReadFollowers }
 
 const REFRESH_MS = 60_000
+const ACTIVE_POLL_MS = 2_000
+const PAGE_REFRESH_AGE_MS = 2 * 60_000
 const signed = n => `${n > 0 ? '+' : ''}${n.toLocaleString()}`
 const rate = value => (value === null || value === undefined ? '—' : `${(value * 100).toFixed(1)}%`)
 const short = date => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
@@ -132,22 +136,41 @@ function addUp(rows) {
   }
 }
 
+const STALE_TARGETS_MS = 14 * 86_400_000
+
+/** 没有真封面图时，左边海报只提炼核心短句或封面字，避免和右侧大标题逐字重复。 */
+function posterHook(item, title) {
+  const coverText = String(item?.production?.coverText ?? '').trim()
+  if (coverText && coverText !== title && [...coverText].length >= 2) return coverText
+  const split = String(title ?? '').split(/\s*(?:——|—|：|:|｜|\|)\s*/u).map(part => part.trim()).filter(part => [...part].length >= 4)
+  if (split.length > 1) return split.reduce((a, b) => ([...b].length <= [...a].length ? b : a))
+  if ([...String(title ?? '')].length > 14) {
+    const first = String(title).split(/[，,？?！!]/u)[0]?.trim()
+    if (first && [...first].length >= 4 && first !== title) return first
+  }
+  return title
+}
+
 function coverOf(item, platform, at) {
-  const real = item.production?.status === 'running' ? null : item.production?.cover?.src || posterOf(displayItem(item))
+  const shown = displayItem(item)
+  const real = item.production?.status === 'running' ? null : item.production?.cover?.src || posterOf(shown)
   if (real) return { src: real, real: true }
-  return { src: typeCover({ id: item.id, title: displayItem(item).title, platform, date: at }), real: false }
+  return { src: typeCover({ id: item.id, title: posterHook(item, shown.title), platform, date: at }), real: false }
 }
 
 /** 一条稿子在大屏上要显示的全部内容。 */
-function slideOf(item, { rank, metrics, previous, targets }) {
+function slideOf(item, { rank, metrics, previous, targets, now }) {
   const shown = displayItem(item)
   const own = metrics.filter(row => row.itemId === item.id)
   const at = item.publishedAt || item.scheduledAt || null
-  const platforms = [...new Set([item.platform, ...Object.keys(item.publish ?? {}), ...own.map(row => row.platform), ...targets].filter(Boolean))].slice(0, 4)
+  // 已发布超过 14 天的旧稿不再硬塞其他常发平台的「未处理」标签，只列实际发过或有数据的平台
+  const showTargets = rank !== 0 || !at || (now - Date.parse(at) <= STALE_TARGETS_MS)
+  const platforms = [...new Set([item.platform, ...Object.keys(item.publish ?? {}), ...own.map(row => row.platform), ...(showTargets ? targets : [])].filter(Boolean))].slice(0, 4)
   const chips = platforms.map((platform) => {
     const rows = own.filter(row => row.platform === platform)
     const state = item.publish?.[platform]?.state ?? (item.status === 'published' && platform === item.platform ? 'published' : null)
-    return { platform, state, ...addUp(rows) }
+    const url = item.publish?.[platform]?.url ?? null
+    return { platform, state, url, ...addUp(rows) }
   })
   // 正文只洗一遍，简介和字数都用它
   const paragraphs = plainText(item.production?.article || item.body || '')
@@ -180,8 +203,8 @@ function slideFromBoard(latest) {
     platform: latest.platform,
     at: latest.at,
     created: latest.at,
-    cover: latest.cover ? { src: latest.cover, real: true } : { src: typeCover({ id: latest.id, title: latest.title, platform: latest.platform ?? '', date: latest.at ?? '' }), real: false },
-    chips: latest.platforms.map(row => ({ platform: row.platform, state: null, views: row.views, engaged: row.engaged })),
+    cover: latest.cover ? { src: latest.cover, real: true } : { src: typeCover({ id: latest.id, title: posterHook(null, latest.title), platform: latest.platform ?? '', date: latest.at ?? '' }), real: false },
+    chips: latest.platforms.map(row => ({ platform: row.platform, state: null, url: null, views: row.views, engaged: row.engaged })),
     stats: { views: latest.views, engaged: latest.engaged, rate: latest.engagementRate },
     previous: latest.previous,
     // 示例数据（还没有自己的内容）没法比同龄：同样交给 slideOf 算
@@ -208,21 +231,29 @@ function buildSlides(items, metrics, latest) {
     rank,
     metrics: real,
     targets,
+    now,
     previous: rank === 0 ? published[published.indexOf(item) + 1] ?? null : null,
   }))
 }
 
 /* ───────────── 最新发布：格子 ───────────── */
 
-function Chip({ chip }) {
+function Chip({ chip, title }) {
   const data = chip.views ?? chip.engaged
+  const onClick = () => {
+    if (chip.state === 'published' && chip.url) openInBrowser(chip.url)
+    else openPublish(title, chip.platform, 'all')
+  }
+  const tip = chip.state === 'published' && chip.url ? t('打开已发布的页面') : t('去「发布」查看{platform}进度', { platform: t(chip.platform) })
   return (
-    <li className={`md-b-chip ${chip.state ? `is-${chip.state}` : ''}`}>
-      <PlatformMark platform={chip.platform} size={22} />
-      <span className="md-b-chip-name">{t(chip.platform)}</span>
-      {data !== null && data !== undefined
-        ? <b>{chip.views !== null && chip.views !== undefined ? t('{n} 播放', { n: compact(chip.views) }) : t('{n} 互动', { n: compact(chip.engaged) })}</b>
-        : <em><i aria-hidden="true" />{t(chip.state ? PUBLISH_STATE[chip.state] : '未处理')}</em>}
+    <li>
+      <button type="button" className={`md-b-chip ${chip.state ? `is-${chip.state}` : ''}`} title={tip} onClick={onClick}>
+        <PlatformMark platform={chip.platform} size={22} />
+        <span className="md-b-chip-name">{t(chip.platform)}</span>
+        {data !== null && data !== undefined
+          ? <b>{chip.views !== null && chip.views !== undefined ? t('{n} 播放', { n: compact(chip.views) }) : t('{n} 互动', { n: compact(chip.engaged) })}</b>
+          : <em><i aria-hidden="true" />{t(chip.state ? PUBLISH_STATE[chip.state] : '未处理')}</em>}
+      </button>
     </li>
   )
 }
@@ -273,7 +304,7 @@ function Slide({ slide, first }) {
         <h1><button type="button" onClick={open}>{slide.title}</button></h1>
         {slide.intro ? <p className="md-b-summary">{slide.intro}</p> : null}
         <p className="md-b-when"><Icon name="clock" size={13} />{whenLine(slide)}</p>
-        {slide.chips.length ? <ul className="md-b-chips" aria-label={t('各平台进度')}>{slide.chips.map(chip => <Chip key={chip.platform} chip={chip} />)}</ul> : null}
+        {slide.chips.length ? <ul className="md-b-chips" aria-label={t('各平台进度')}>{slide.chips.map(chip => <Chip key={chip.platform} chip={chip} title={slide.title} />)}</ul> : null}
         <span className="md-grow" />
         <SlideFoot slide={slide} />
         {slide.previous ? (
@@ -353,17 +384,29 @@ function FansTile({ board, onAutoRead, marks }) {
   const hasNet = platforms.length > 0
   const total = board.total.followers
   const known = total !== null && total !== undefined
+  // 记录天数还很少时自动缩成近 7 天或近 14 天窗口，避免左边 90% 空着只剩最右一根柱子
+  const firstNet = board.daily.findIndex(row => Object.keys(row.net).length > 0)
+  const spanDays = firstNet < 0 ? 30 : board.daily.length - firstNet <= 7 ? 7 : board.daily.length - firstNet <= 14 ? 14 : 30
+  const shownDaily = spanDays < board.daily.length ? board.daily.slice(-spanDays) : board.daily
+  const fanParts = board.platforms
+    .filter(row => row.platform !== '谷歌学术' && row.followers !== null && row.followers !== undefined)
+    .map(row => `${t(row.platform)} ${row.followersApprox ? approxText(row.followers) : row.followers.toLocaleString()}${row.platform === 'GitHub' ? ' (Star)' : ''}`)
+  const breakdownTip = [
+    board.total.partial?.followers ? t('有的平台还没记粉丝数，这里只加了记过的') : '',
+    board.total.approx ? t('含平台返回的约数') : '',
+    fanParts.join(' · '),
+  ].filter(Boolean).join('\n') || undefined
   return (
     <section className={`md-tile md-b-fans ${known ? '' : 'is-empty'}`}>
       <header className="md-tile-head">
         <h2>{t('粉丝')}</h2>
-        <span className="md-tile-meta" title={board.total.partial?.followers ? t('有的平台还没记粉丝数，这里只加了记过的') : undefined}>{!known ? t('还没有平台记过粉丝') : board.total.partial?.followers ? t('{n}/{m} 个平台合计', { n: board.total.known.followers, m: board.total.platforms }) : t('{n} 个平台合计', { n: board.platforms.filter(row => row.followers !== null).length })}</span>
+        <span className="md-tile-meta" title={breakdownTip}>{!known ? t('还没有平台记过粉丝') : board.total.partial?.followers ? t('{n}/{m} 个平台合计', { n: board.total.known.followers, m: board.total.platforms }) : t('{n} 个平台合计', { n: fanParts.length })}</span>
         <span className="md-grow" />
         {hasNet ? <Segmented label={t('显示方式')} value={show} onChange={setShow} options={[{ value: 'chart', label: t('图') }, { value: 'table', label: t('表') }]} /> : null}
       </header>
       {known ? (
         <>
-          <div className="md-b-total">{total.toLocaleString()}</div>
+          <div className="md-b-total" title={breakdownTip}>{board.total.approx ? <span className="md-b-approx" aria-label={t('约')}>≈</span> : null}{total.toLocaleString()}</div>
           <div className="md-b-deltas">
             <Delta label={[t('今日'), partOf(board.total, 'today')].filter(Boolean).join(' · ')} value={board.total.today} why={board.total.partial?.today ? t('只加了两头都记过的平台') : undefined} />
             <Delta label={[t('近 7 天'), partOf(board.total, 'd7')].filter(Boolean).join(' · ')} value={board.total.d7} why={board.total.partial?.d7 ? t('只加了两头都记过的平台') : undefined} />
@@ -375,11 +418,11 @@ function FansTile({ board, onAutoRead, marks }) {
       {hasNet ? (
         <>
           <div className="md-b-legend">
-            <span>{t('每日净增 · 近 30 天')}</span>
+            <span>{spanDays === 30 ? t('每日净增 · 近 30 天') : t('每日净增 · 近 {n} 天', { n: spanDays })}</span>
             <span className="md-grow" />
             {platforms.map(platform => <span key={platform} className="md-b-key"><i style={{ background: colorOf(platform) }} />{t(platform)}</span>)}
           </div>
-          {show === 'chart' ? <div className="md-b-plot"><NetBars daily={board.daily} platforms={platforms} label={t('近 30 天各平台每日净增粉丝')} /></div> : (
+          {show === 'chart' ? <div className="md-b-plot"><NetBars daily={shownDaily} platforms={platforms} label={spanDays === 30 ? t('近 30 天各平台每日净增粉丝') : t('近 {n} 天各平台每日净增粉丝', { n: spanDays })} /></div> : (
             <div className="md-i-table">
               <table className="md-table is-plain">
                 <thead><tr><th>{t('日期')}</th>{platforms.map(p => <th key={p} className="is-num">{t(p)}</th>)}<th className="is-num">{t('合计')}</th></tr></thead>
@@ -481,17 +524,19 @@ function PlatformRow({ board, chosen, accounts, onPick }) {
   const quiet = rows.every(row => row.followers === null)
   const support = board.autoRead?.support ?? {}
   return (
-    <div className={`md-b-cards ${quiet ? 'is-quiet' : ''} ${edges}`} ref={ref} style={{ '--n': rows.length, '--cols': Math.min(rows.length, 4) }}>
-      {rows.map(row => (
-        <PlatformCard
-          key={row.platform}
-          row={row}
-          auto={support[row.platform]}
-          onLog={() => logFollowers(board)}
-          onLink={() => editAccountLinks(accounts, support, row.platform)}
-          onRead={() => readAccountsNow([row.platform])}
-        />
-      ))}
+    <div className="md-b-cards-row" style={{ '--cols': Math.min(rows.length, 4) }}>
+      <div className={`md-b-cards ${quiet ? 'is-quiet' : ''} ${edges}`} ref={ref} style={{ '--n': rows.length }}>
+        {rows.map(row => (
+          <PlatformCard
+            key={row.platform}
+            row={row}
+            auto={support[row.platform]}
+            onLog={() => logFollowers(board)}
+            onLink={() => editAccountLinks(accounts, support, row.platform)}
+            onRead={() => readAccountsNow([row.platform])}
+          />
+        ))}
+      </div>
       <button type="button" className="md-b-pick-btn" onClick={onPick} title={t('显示哪些平台')}><Icon name="gear" size={16} /><span>{t('显示哪些平台')}</span></button>
     </div>
   )
@@ -550,26 +595,88 @@ function PlatformPicker({ chosen, withData, onClose }) {
 
 /* ───────────── 整页 ───────────── */
 
+/** 点击外部、按 Esc 或展开另一个菜单时，收起顶栏打开的 <details> 下拉菜单。 */
+function useDismissMenus(rootRef) {
+  React.useEffect(() => {
+    const onPointerDown = (event) => {
+      const root = rootRef.current
+      if (!root) return
+      for (const el of root.querySelectorAll('details.md-b-menu[open]')) {
+        if (!el.contains(event.target)) el.removeAttribute('open')
+      }
+    }
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      const root = rootRef.current
+      if (!root) return
+      const openMenus = [...root.querySelectorAll('details.md-b-menu[open]')]
+      if (!openMenus.length) return
+      event.stopPropagation()
+      openMenus.forEach(el => el.removeAttribute('open'))
+    }
+    const onToggle = (event) => {
+      const target = event.target
+      if (!(target instanceof HTMLDetailsElement) || !target.open || !target.classList.contains('md-b-menu')) return
+      const root = rootRef.current
+      if (!root) return
+      for (const el of root.querySelectorAll('details.md-b-menu[open]')) {
+        if (el !== target) el.removeAttribute('open')
+      }
+    }
+    const root = rootRef.current
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    root?.addEventListener('toggle', onToggle, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown, true)
+      root?.removeEventListener('toggle', onToggle, true)
+    }
+  }, [rootRef])
+}
+
+function BoardSkeleton() {
+  return (
+    <div className="md-board-page md-b-page is-skeleton" aria-busy="true">
+      <div className="md-b-bar"><span className="md-b-status" /></div>
+      <div className="md-b-grid">
+        <div className="md-tile md-b-latest" />
+        <div className="md-tile md-b-fans" />
+        <div className="md-b-side"><div className="md-tile md-b-analysis" /><div className="md-tile md-b-income" /></div>
+        <div className="md-b-cards-row" style={{ '--cols': 4 }}>
+          <div className="md-b-cards" style={{ '--n': 4 }}>
+            <div className="md-tile md-b-card" /><div className="md-tile md-b-card" /><div className="md-tile md-b-card" /><div className="md-tile md-b-card" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function BoardView() {
   useLang()
   const version = useDesk(s => s.state)
-  const [board, setBoard] = React.useState(null)
+  const cachedBoard = useDesk(s => s.board)
+  const [board, setBoard] = React.useState(() => cachedBoard)
   const [error, setError] = React.useState(null)
   const [attempt, setAttempt] = React.useState(0)
   const root = React.useRef(null)
+  useDismissMenus(root)
   const accounts = useDesk(s => s.state.accounts)
   const chosen = useDesk(s => s.state.boardPlatforms)
   const [reading, setReading] = React.useState(false)
-  // 打开大屏时公开接口的数过了 6 小时：在后台补读一次，不挡界面，状态条写「正在更新」
+  // 打开或刷新大屏时，如果公开接口数据距上次超过 2 分钟（或服务端标了 stale），在后台无感补读一次公开数据
   const [refreshing, setRefreshing] = React.useState(false)
   const refreshed = React.useRef(false)
-  const stale = Boolean(board?.autoRead?.stale)
+  const hasPublicLinks = React.useMemo(() => (accounts ?? []).some(account => !account.sample && account.url && board?.autoRead?.support?.[account.platform]?.readable !== false && !board?.autoRead?.support?.[account.platform]?.backstage), [accounts, board?.autoRead?.support])
+  const publicOkAt = board?.autoRead?.last?.publicOkAt
+  const publicExpired = Boolean(board && !board.autoRead?.last?.running && board.autoRead?.schedule?.enabled !== false && (board.autoRead?.stale || (hasPublicLinks && (!publicOkAt || Date.now() - Date.parse(publicOkAt) > PAGE_REFRESH_AGE_MS))))
   React.useEffect(() => {
-    if (!stale || refreshed.current) return
+    if (!publicExpired || refreshed.current) return
     refreshed.current = true
     setRefreshing(true)
-    refreshPublic().catch(() => {}).finally(() => setRefreshing(false))
-  }, [stale])
+    refreshPublic(PAGE_REFRESH_AGE_MS).catch(() => {}).finally(() => setRefreshing(false))
+  }, [publicExpired])
   const [picking, setPicking] = React.useState(false)
   // 还没有任何自己的内容、订阅和粉丝记录：先给三步上手，不摆一排空格子
   const fresh = useFreshDesk()
@@ -581,26 +688,38 @@ export function BoardView() {
       setReading(false)
     }
   }
+  const initialVersion = React.useRef(version)
+  const usedPreload = React.useRef(false)
+  const isBackendRunning = Boolean(board?.autoRead?.last?.running)
+  const activePolling = reading || refreshing || isBackendRunning
   React.useEffect(() => {
     let alive = true
     const load = () => fetchBoard()
       .then((next) => { if (alive) { setBoard(next); setError(null) } })
       .catch((err) => { if (alive) setError(err.message || String(err)) })
-    load()
-    const timer = setInterval(load, REFRESH_MS)
+    // 只有首次挂载且 state 还没变过时复用 loadDesk 并行预取的那一份；后续任何 state 变更都立即重拉
+    if (!usedPreload.current && version === initialVersion.current && attempt === 0 && cachedBoard) {
+      usedPreload.current = true
+      setBoard(cachedBoard)
+    } else {
+      usedPreload.current = true
+      load()
+    }
+    const timer = setInterval(load, activePolling ? ACTIVE_POLL_MS : REFRESH_MS)
     return () => { alive = false; clearInterval(timer) }
-  }, [version, attempt])
+  }, [version, attempt, activePolling]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!board && error) return <div className="md-page"><p className="md-muted">{t('大屏加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={() => setAttempt(n => n + 1)}>{t('重试')}</button></div>
-  if (!board) return <div className="md-board-page"><div className="md-tile md-b-latest" /></div>
+  if (!board) return <BoardSkeleton />
   return (
     <div className="md-board-page md-b-page" ref={root}>
-      {/* 顶上只留一行：数据记到哪天、时间，和一个「更新数据」入口。别的入口都收进各自的格子里 */}
+      {/* 顶上只留一行：数据记到哪天、时间，以及记灵感、做视频和更新数据入口 */}
       <div className="md-b-bar">
         <span className="md-b-status"><i className={board.updatedAt === dayKey(new Date()) ? 'is-ok' : ''} />{board.updatedAt ? t('粉丝数记到 {date}', { date: short(board.updatedAt) }) : t('还没有粉丝记录')}</span>
         <AutoReadStatus info={board.autoRead} reading={reading} refreshing={refreshing} onRead={autoRead} onLinks={() => editAccountLinks(accounts, board.autoRead?.support)} />
         {board.hasSample ? <span className="md-b-status">{t('现在是示例数据')}</span> : null}
         {error ? <span className="md-b-status">{t('刷新失败，显示的是上一次的数据')}</span> : null}
         <span className="md-grow" />
+        <button type="button" className="md-pill is-small is-accent" onClick={() => openQuickCapture()}><Icon name="spark" size={13} />{t('记灵感')}</button>
         {/* 视频页入口：口播稿、提词录制、字幕、粗剪 */}
         <button type="button" className="md-pill is-small" onClick={() => go('video')}><Icon name="film" size={13} />{t('做视频')}</button>
         <details className="md-b-menu">

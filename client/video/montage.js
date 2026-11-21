@@ -241,44 +241,92 @@ function drawScene(ctx, plan, scene, index, t, options) {
     ctx.fillStyle = colors.bg
     ctx.fillRect(0, 0, W, H)
     if (video?.videoWidth) {
-      // 录像按原比例放进画面；画幅不一样时上下或左右留边，录屏的内容不被裁掉
-      // 口播（fill: cover）铺满画面，人脸居中；录屏等其余模板完整放下，不裁内容
-      const cover = look.fill === 'cover'
-      const fit = cover ? Math.max(W / video.videoWidth, H / video.videoHeight) : Math.min(W / video.videoWidth, H / video.videoHeight)
-      const zoom = look.motion === 'zoom' ? 1 + 0.06 * Math.sin(Math.PI * p) : 1
-      const w = video.videoWidth * fit * zoom
-      const h = video.videoHeight * fit * zoom
-      const x = (W - w) / 2
-      const y = (H - h) / 2
-      ctx.drawImage(video, x, y, w, h)
-      // 留边不用纯黑：从画面边缘渐变到深灰，像一张柔和的海报底，字幕压在边上也不突兀
-      if (h < H - 1) {
-        const top = ctx.createLinearGradient(0, 0, 0, Math.max(1, y + 1))
-        top.addColorStop(0, '#15161a')
-        top.addColorStop(1, '#25262b')
-        ctx.fillStyle = top
-        ctx.fillRect(0, 0, W, y + 1)
-        const bottomY = y + h
-        const bottom = ctx.createLinearGradient(0, bottomY, 0, H)
-        bottom.addColorStop(0, '#25262b')
-        bottom.addColorStop(1, '#15161a')
-        ctx.fillStyle = bottom
-        ctx.fillRect(0, bottomY, W, H - bottomY)
+      const windowed = options.frameStyle === 'window'
+      if (windowed) {
+        // Cap / Screen Studio 式桌面窗口画布：主题渐变衬底 + 圆角窗口 + 柔和投影 + 顶栏红黄绿圆点
+        const bgGrad = ctx.createLinearGradient(0, 0, W, H)
+        bgGrad.addColorStop(0, colors.ink)
+        bgGrad.addColorStop(1, colors.accent)
+        ctx.fillStyle = bgGrad
+        ctx.fillRect(0, 0, W, H)
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'
+        ctx.fillRect(0, 0, W, H)
+        const marginX = W * 0.055
+        const marginY = H * 0.065
+        const barH = Math.round(34 * unit)
+        const availW = W - marginX * 2
+        const availH = H - marginY * 2 - barH
+        const fit = Math.min(availW / video.videoWidth, availH / video.videoHeight)
+        const zoom = look.motion === 'zoom' ? 1 + 0.04 * Math.sin(Math.PI * p) : 1
+        const w = video.videoWidth * fit * zoom
+        const h = video.videoHeight * fit * zoom
+        const x = (W - w) / 2
+        const y = (H - (h + barH)) / 2 + barH
+        const radius = Math.round(20 * unit)
+        ctx.save()
+        ctx.shadowColor = 'rgba(0,0,0,0.45)'
+        ctx.shadowBlur = 42 * unit
+        ctx.shadowOffsetY = 18 * unit
+        ctx.fillStyle = '#1e1f24'
+        ctx.beginPath()
+        ctx.roundRect(x, y - barH, w, h + barH, radius)
+        ctx.fill()
+        ctx.restore()
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(x, y - barH, w, h + barH, radius)
+        ctx.clip()
+        ctx.fillStyle = '#25272e'
+        ctx.fillRect(x, y - barH, w, barH)
+        ;['#ff5f56', '#ffbd2e', '#27c93f'].forEach((dot, di) => {
+          ctx.fillStyle = dot
+          ctx.beginPath()
+          ctx.arc(x + (20 + di * 18) * unit, y - barH / 2, 5.5 * unit, 0, Math.PI * 2)
+          ctx.fill()
+        })
+        ctx.drawImage(video, x, y, w, h)
+        ctx.restore()
+        options.videoRect = { x, y, w, h }
+      } else {
+        // 录像按原比例放进画面；画幅不一样时上下或左右留边，录屏的内容不被裁掉
+        // 口播（fill: cover）铺满画面，人脸居中；录屏等其余模板完整放下，不裁内容
+        const cover = look.fill === 'cover'
+        const fit = cover ? Math.max(W / video.videoWidth, H / video.videoHeight) : Math.min(W / video.videoWidth, H / video.videoHeight)
+        const zoom = look.motion === 'zoom' ? 1 + 0.06 * Math.sin(Math.PI * p) : 1
+        const w = video.videoWidth * fit * zoom
+        const h = video.videoHeight * fit * zoom
+        const x = (W - w) / 2
+        const y = (H - h) / 2
+        ctx.drawImage(video, x, y, w, h)
+        // 留边不用纯黑：从画面边缘渐变到深灰，像一张柔和的海报底，字幕压在边上也不突兀
+        if (h < H - 1) {
+          const top = ctx.createLinearGradient(0, 0, 0, Math.max(1, y + 1))
+          top.addColorStop(0, '#15161a')
+          top.addColorStop(1, '#25262b')
+          ctx.fillStyle = top
+          ctx.fillRect(0, 0, W, y + 1)
+          const bottomY = y + h
+          const bottom = ctx.createLinearGradient(0, bottomY, 0, H)
+          bottom.addColorStop(0, '#25262b')
+          bottom.addColorStop(1, '#15161a')
+          ctx.fillStyle = bottom
+          ctx.fillRect(0, bottomY, W, H - bottomY)
+        }
+        if (w < W - 1) {
+          const left = ctx.createLinearGradient(0, 0, Math.max(1, x + 1), 0)
+          left.addColorStop(0, '#15161a')
+          left.addColorStop(1, '#25262b')
+          ctx.fillStyle = left
+          ctx.fillRect(0, y, x + 1, h)
+          const right = ctx.createLinearGradient(x + w, 0, W, 0)
+          right.addColorStop(0, '#25262b')
+          right.addColorStop(1, '#15161a')
+          ctx.fillStyle = right
+          ctx.fillRect(x + w, y, W - (x + w), h)
+        }
+        // 字幕贴在画面内容的下沿，不留进黑边里；画面铺满时等于贴屏幕底
+        options.videoRect = { x, y, w, h }
       }
-      if (w < W - 1) {
-        const left = ctx.createLinearGradient(0, 0, Math.max(1, x + 1), 0)
-        left.addColorStop(0, '#15161a')
-        left.addColorStop(1, '#25262b')
-        ctx.fillStyle = left
-        ctx.fillRect(0, y, x + 1, h)
-        const right = ctx.createLinearGradient(x + w, 0, W, 0)
-        right.addColorStop(0, '#25262b')
-        right.addColorStop(1, '#15161a')
-        ctx.fillStyle = right
-        ctx.fillRect(x + w, y, W - (x + w), h)
-      }
-      // 字幕贴在画面内容的下沿，不留进黑边里；画面铺满时等于贴屏幕底
-      options.videoRect = { x, y, w, h }
     }
   } else if (scene.kind === 'image') {
     if (img) drawCover(ctx, img, img.width, img.height, W, H, p, index, look.motion)
@@ -564,7 +612,7 @@ export function pickRenderMime() {
  * 画不过来时跳帧（按时钟画当下那一帧），不会越录越慢。
  * @returns {Promise<{blob: Blob, seconds: number, frames: number, dropped: number}|null>} 取消时返回 null。
  */
-export async function renderMontage({ plan, size, colors, images, narration = null, videoSrc = null, context, canvas, onProgress, signal }) {
+export async function renderMontage({ plan, size, colors, images, narration = null, videoSrc = null, frameStyle = 'bleed', context, canvas, onProgress, signal }) {
   const [W, H] = size
   canvas.width = W
   canvas.height = H
@@ -591,7 +639,7 @@ export async function renderMontage({ plan, size, colors, images, narration = nu
   const chunks = []
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
   const stopped = new Promise(resolve => { recorder.onstop = resolve })
-  const opts = { W, H, colors, images, video }
+  const opts = { W, H, colors, images, video, frameStyle }
   drawFrame(ctx, plan, 0, opts)
   let source = null
   const t0 = audio.currentTime + 0.06

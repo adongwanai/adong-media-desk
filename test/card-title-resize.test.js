@@ -1,7 +1,7 @@
 // 图文卡片的两处反馈：封面标题能自己填（空着回退到稿子标题），拖大图片 / 表格时不被挤到下一页。
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { imageMaxHeight, largestFit } from '../client/layouts/card-interact.js'
+import { coverImageBox, imageMaxHeight, largestFit, proportionalImageBox } from '../client/layouts/card-interact.js'
 import { COVER_TITLE_MAX, cardContext, cardTitle, estimateFits, pageOfKey, paginate, planSections, renderCard } from '../client/layouts/cards.js'
 
 test('cardTitle：填了就用填的，空着或全是空白就回退到稿子标题', () => {
@@ -82,4 +82,42 @@ test('largestFit：二分找放得下的最大缩放', () => {
   assert.equal(largestFit(1.1, 1.6, () => false), 1.1)
   // 往小拖不用找
   assert.equal(largestFit(1.2, 1, () => false), 1)
+})
+
+test('proportionalImageBox、coverImageBox 与 renderCard：四角等比缩放无裁剪，上下左右拉缩与框内拖动保留完整位图不露白边', () => {
+  // 1. 四角等比缩放：16:9 截图放大时按宽高比锁定在卡片最大宽 maxW 内，绝不自动裁切边缘
+  const wide = proportionalImageBox({ targetW: 500, natural: 16 / 9, maxW: 410, maxH: 480 })
+  assert.equal(wide.w, 410)
+  assert.equal(wide.h, 230.6)
+  assert.equal(wide.hitLimit, true)
+  assert.ok(Math.abs(wide.w / wide.h - 16 / 9) < 0.01)
+
+  // 竖图（3:4）等比缩放受高度限制时，宽度同步收住不裁上下
+  const tall = proportionalImageBox({ targetW: 400, natural: 0.75, maxW: 410, maxH: 320 })
+  assert.equal(tall.w, 240)
+  assert.equal(tall.h, 320)
+  assert.equal(tall.hitLimit, true)
+  assert.ok(Math.abs(tall.w / tall.h - 0.75) < 0.01)
+
+  // 2. coverImageBox：等比框完整无裁剪；上下拉缩保留上下完整位图；左右拉缩保留左右完整位图供框内拖动
+  assert.deepEqual(coverImageBox(400, 250, 1.6), { imgW: 400, imgH: 250, left: 0, top: 0 })
+  assert.deepEqual(coverImageBox(400, 150, 1.6), { imgW: 400, imgH: 250, left: 0, top: -50 })
+  assert.deepEqual(coverImageBox(200, 250, 1.6), { imgW: 400, imgH: 250, left: -100, top: 0 })
+
+  // 3. renderCard：预览与导出统一按 coverImageBox 输出完整未预裁切几何和平移缩放矩阵
+  const sections = planSections('## 节\n![截图](media-desk/files/a.png)', {
+    title: 'T',
+    resolveImage: () => ({ src: 'data:image/png;base64,AAAA', width: 1600, height: 1000 }),
+  })
+  const imgKey = sections[1].blocks[0].key
+  const previewCtx = cardContext({}, {}, { lines: true, images: { [imgKey]: { w: 400, h: 150, x: 12, y: -30, s: 1.2 } } })
+  const exportCtx = cardContext({}, {}, { lines: false, images: { [imgKey]: { w: 400, h: 150, x: 12, y: -30, s: 1.2 } } })
+  const page = paginate(sections, estimateFits(previewCtx))[1]
+  const previewHtml = renderCard(page, previewCtx)
+  const exportHtml = renderCard(page, exportCtx)
+  assert.match(previewHtml, /left: 0px; top: -50px; width: 400px; height: 250px/)
+  assert.match(previewHtml, /transform: translate\(12px, -30px\) scale\(1\.2\)/)
+  assert.match(previewHtml, /data-aspect="1\.60000"/)
+  assert.match(exportHtml, /left: 0px; top: -50px; width: 400px; height: 250px/)
+  assert.doesNotMatch(exportHtml, /data-aspect=/)
 })

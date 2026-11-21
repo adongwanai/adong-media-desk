@@ -343,6 +343,12 @@ test('粉丝合计：一个平台都没数时是 null；只有部分平台有数
   assert.equal(some.total.platforms, 2)
   assert.deepEqual([some.total.known.followers, some.total.partial.followers], [1, true])
   assert.deepEqual([some.total.today, some.total.partial.today], [10, true])
+  assert.equal(some.total.approx, false)
+
+  // 有平台粉丝数是后台约数时，合计标上 approx
+  const approxState = empty()
+  approxState.followerLog.push({ id: 'dy_0', platform: '抖音', date: day(0), followers: 11300, fetchedAt: NOW.toISOString(), approx: true })
+  assert.equal(computeBoard(approxState, NOW).total.approx, true)
 })
 
 test('GitHub 和谷歌学术能记数、能上大屏；GitHub 读名下仓库的 star 总数，fork 来的不算', async () => {

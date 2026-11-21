@@ -89,11 +89,11 @@ export function NetBars({ daily, platforms, label }) {
           </g>
         ))}
         {hover === null ? null : <rect x={pad.l + hover * band} y={pad.t} width={band} height={innerH} className="md-b-band" />}
-        {stacks.map((s, i) => s.parts.map((part) => {
+        {stacks.map((s, i) => (s.parts.length ? s.parts.map((part) => {
           // 相邻色块之间留 2px 的底色缝
           const h = Math.max(Math.abs(y(part.from) - y(part.to)) - 2, 1)
           return <rect key={`${daily[i].date}-${part.platform}`} x={x(i)} y={Math.min(y(part.to), y(part.from)) + 1} width={barW} height={h} rx={Math.min(2, h / 2)} fill={colorOf(part.platform)} />
-        }))}
+        }) : <rect key={`${daily[i].date}-empty`} x={x(i)} y={y(0) - 1} width={barW} height={2} rx={1} className="md-b-empty-bar" />))}
         {daily.map((row, i) => (i % labelEvery === 0 ? <text key={row.date} x={pad.l + i * band + band / 2} y={height - 5} textAnchor="middle" className="md-chart-axis">{short(row.date)}</text> : null))}
       </svg>
       {point ? (

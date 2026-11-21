@@ -1,5 +1,10 @@
-import { EN } from './en/index.js'
-import { lang, t } from './i18n.js'
+import { lang, lookupEn, t } from './i18n.js'
+
+export const PLATFORM_EN_NAMES = {
+  公众号: 'WeChat', 小红书: 'Xiaohongshu', 抖音: 'Douyin', B站: 'Bilibili', 视频号: 'Channels',
+  知乎: 'Zhihu', 头条: 'Toutiao', TikTok: 'TikTok', Instagram: 'Instagram', YouTube: 'YouTube', X: 'X',
+  GitHub: 'GitHub', 谷歌学术: 'Google Scholar',
+}
 
 // 这些表只放中文原文，显示时再用 t() 翻译
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
@@ -130,7 +135,8 @@ export function compact(n) {
 
 /** 数量后面的单位。英文在 n 为 1 时用单数，词典里 key 写成「单位|1」。 */
 export function unit(n, zh) {
-  if (lang() === 'en' && n === 1 && EN[`${zh}|1`] !== undefined) return EN[`${zh}|1`]
+  const singular = lang() === 'en' && n === 1 ? lookupEn(`${zh}|1`) : undefined
+  if (singular !== undefined) return singular
   return t(zh)
 }
 
@@ -242,3 +248,4 @@ export function textLength(text) {
   if (lang() !== 'en') return text.replace(/\s/g, '').length
   return (text.match(/[\u4e00-\u9fff]|[A-Za-z0-9][A-Za-z0-9'’-]*/g) || []).length
 }
+

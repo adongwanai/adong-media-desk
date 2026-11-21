@@ -23,6 +23,7 @@ async function tempDir(prefix) {
   return mkdtemp(join(tmpdir(), prefix))
 }
 
+
 test('素材预算：放不下的整份删掉并记下名字；整份都放不下时，把最相关的一份按段落截断', () => {
   const rows = [row('a', 'a.md', 'x'.repeat(60)), row('b', 'b.md', 'y'.repeat(50)), row('c', 'c.md', 'z'.repeat(30))]
   const packed = packMaterials(rows, 100)
@@ -44,6 +45,7 @@ test('素材预算：放不下的整份删掉并记下名字；整份都放不�
   assert.deepEqual(packMaterials([row('e', 'e.md', '  ')]).parts, [])
 })
 
+
 test('正文超长按段落截断：不切半段，截了就注明；不超就原样', () => {
   const text = 'aaaa\n\nbbbb\n\ncccc'
   assert.deepEqual(truncateByParagraph(text, 100), { text, truncated: false, original: text.length })
@@ -55,6 +57,7 @@ test('正文超长按段落截断：不切半段，截了就注明；不超就�
   assert.match(plain.text, /^一句话。二句话。\n\n（原文 12 字/)
 })
 
+
 test('素材正文算作有出处的依据：素材里写过的经历不再标成无依据；长素材从 files 读回来的部分也算', () => {
   const article = '## 开头\n\n我用 Claude Code 跑了两周，每天写 3 篇。\n\n我在公司内部部署了一套，效果稳定。'
   const item = { title: '写稿工具', body: '', materials: [{ id: 'm1', name: 'log.md', text: '我用 Claude Code 跑了两周，每天写 3 篇，记了日志。', chars: 30 }] }
@@ -64,6 +67,7 @@ test('素材正文算作有出处的依据：素材里写过的经历不再标�
   // 没有素材时照旧全部标出
   assert.equal(unsupportedClaims(article, userText({ title: '写稿工具', body: '' })).length, 2)
 })
+
 
 test('提示词：素材进 <attachments>，工作流进 <workflow> 且写明只学写法、不能编经历和来源', () => {
   const state = { ...buildSeed(NOW, 'zh'), activeStyleId: null, skills: [] }
@@ -84,6 +88,7 @@ test('提示词：素材进 <attachments>，工作流进 <workflow> 且写明只
   assert.equal(materialsBlock([]), '')
   assert.equal(flowBlock([]), '')
 })
+
 
 test('工作流仅索引显式工作区和自定义路径，默认不扫描桌面或全局技能', async () => {
   const home = await tempDir('media-desk-flow-')
@@ -107,6 +112,7 @@ test('工作流仅索引显式工作区和自定义路径，默认不扫描桌�
   } finally { await rm(home, { recursive: true, force: true }) }
 })
 
+
 test('工作流预算：一份超长按段落截断注明，合计超预算的整份不放并列出来', async () => {
   const dir = await tempDir('media-desk-flow-budget-')
   try {
@@ -127,6 +133,7 @@ test('工作流预算：一份超长按段落截断注明，合计超预算的�
   }
 })
 
+
 test('状态迁移：老数据没有 materials 不加字段；坏掉的行丢掉；缺 id 的补一个每次都一样的；落盘文件名只认 material-*.txt', () => {
   const state = migrateState({ items: [
     { id: 'old', title: '老灵感' },
@@ -146,6 +153,7 @@ test('状态迁移：老数据没有 materials 不加字段；坏掉的行丢掉
   assert.deepEqual(cleanMaterials(state.items[2].materials), state.items[2].materials)
   assert.equal(cleanMaterials([{ name: 'a.md' }])[0].id, cleanMaterials([{ name: 'a.md' }])[0].id)
 })
+
 
 test('加素材：超过 2 万字的正文落到 files，state 只存前 2 万字和引用；一次最多 10 份，合计 20 万字，超了说清楚；删了可以撤销', async () => {
   const dir = await tempDir('media-desk-materials-')
@@ -192,6 +200,7 @@ test('加素材：超过 2 万字的正文落到 files，state 只存前 2 万�
   }
 })
 
+
 test('成稿：素材和工作流进提示词，production.flow.sources 记下实际用了哪些、删了哪份；素材里的经历不标无依据', async () => {
   const dir = await tempDir('media-desk-produce-materials-')
   try {
@@ -237,6 +246,7 @@ test('成稿：素材和工作流进提示词，production.flow.sources 记下�
   }
 })
 
+
 test('设置：写作工作流的路径和勾选能存能清；格式不对时报错', async () => {
   const dir = await tempDir('media-desk-flow-settings-')
   try {
@@ -251,6 +261,7 @@ test('设置：写作工作流的路径和勾选能存能清；格式不对时�
     await rm(dir, { recursive: true, force: true })
   }
 })
+
 
 test('files 目录里只出现素材文件，不碰用户自己的文件', async () => {
   const dir = await tempDir('media-desk-readonly-')

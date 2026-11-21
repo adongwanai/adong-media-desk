@@ -6,6 +6,8 @@ import { makeZip } from './zip.js'
 import { fetchImageViaHost } from '../desk.js'
 
 let measurer = null
+const FITS_CACHE_MAX = 600
+const fitsCache = new Map()
 
 /** 量高度用的隐藏卡片：挂在页面外，用 shadow root 隔开工作台自己的样式。 */
 function measureRoot(width = CARD_WIDTH, height = CARD_HEIGHT) {
@@ -19,13 +21,20 @@ function measureRoot(width = CARD_WIDTH, height = CARD_HEIGHT) {
   return measurer.root
 }
 
-/** 这一页放进卡片里会不会溢出：正文那一节的内容高度不超过它的可见高度。 */
+/** 这一页放进卡片里会不会溢出：缓存相同 HTML 与尺寸的测量结果，避免二分断行反复触发同步回流。 */
 export function measureFits(page, ctx) {
+  const html = renderCard(page, ctx)
+  const cacheKey = `${ctx.width}x${ctx.height}|${html}`
+  const hit = fitsCache.get(cacheKey)
+  if (hit !== undefined) return hit
   const root = measureRoot(ctx.width, ctx.height)
   // renderCard 先转义再拼标签，正文里的 HTML 不会执行
-  root.innerHTML = renderCard(page, ctx)
+  root.innerHTML = html
   const body = root.querySelector('[data-part="body"]')
-  return body ? body.scrollHeight <= body.clientHeight + 1 : true
+  const ok = body ? body.scrollHeight <= body.clientHeight + 1 : true
+  if (fitsCache.size >= FITS_CACHE_MAX) fitsCache.delete(fitsCache.keys().next().value)
+  fitsCache.set(cacheKey, ok)
+  return ok
 }
 
 // 工作台自己的文件，和打包进来的言起背景图

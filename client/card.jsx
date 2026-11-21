@@ -44,6 +44,42 @@ function hostOf(url) {
   }
 }
 
+/** 笔记卡片摘要：洗掉裸露的 Markdown 标记，并去掉和标题完全重复的开头。 */
+export function cleanNotePreview(body, title) {
+  if (!body) return ''
+  let text = String(body)
+    .replace(/^---\n[\s\S]*?\n---\n/, '')
+    .replace(/!\[\[[^\]]*\]\]/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*>+\s?/gm, '')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/==(.+?)==/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const head = String(title ?? '').trim()
+  if (head) {
+    const compactText = text.replace(/\s+/g, '')
+    const compactHead = head.replace(/\s+/g, '')
+    if (compactText === compactHead) return ''
+    if (text.startsWith(head)) text = text.slice(head.length).replace(/^[。！？!?.，,：:—\-\s]+/u, '').trim()
+    else if (compactHead.length >= 6) {
+      // 标题多补了主语（如「我建议…」对应正文开头「建议…」）或空格略有差异时，也跳过开头重复句
+      const firstSentence = text.split(/[。！？\n]|[.!?](?=\s|$)/)[0]?.trim() ?? ''
+      const cf = firstSentence.replace(/\s+/g, '')
+      if (cf && (compactHead.includes(cf) || cf.includes(compactHead)) && Math.abs(cf.length - compactHead.length) <= 3) {
+        text = text.slice(firstSentence.length).replace(/^[。！？!?.，,：:—\-\s]+/u, '').trim()
+      }
+    }
+  }
+  return text
+}
+
 export function Card({ item: raw, onOpen }) {
   const item = displayItem(raw)
   const inverted = item.pinned
@@ -51,10 +87,14 @@ export function Card({ item: raw, onOpen }) {
   const [hover, setHover] = React.useState(false)
   const hasMedia = Boolean(item.media) && ['image', 'video', 'web'].includes(item.kind)
   const lines = hash(item.id) % 2 === 0
+  const preview = item.kind === 'note' ? cleanNotePreview(item.body, item.title) : ''
+  const attCount = new Set([...(raw.attachments ?? []).map(a => a.name), ...(raw.materials ?? []).map(m => m.name)]).size
+  const takesCount = (raw.production?.takes ?? []).filter(r => r.kind !== 'render').length
+  const hasSpoken = Boolean((typeof raw.production?.spoken === 'string' ? raw.production.spoken : raw.production?.spoken?.text ?? '').trim())
 
   return (
     <article
-      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''}`}
+      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${running ? 'is-running' : ''} ${item.status === 'published' ? 'is-published' : ''}`}
       data-card={item.id}
       tabIndex={0}
       role="button"
@@ -82,7 +122,7 @@ export function Card({ item: raw, onOpen }) {
         <div className="md-card-note">
           {item.rel ? <span className="md-card-rel">{item.rel}</span> : null}
           <h3>{item.title}</h3>
-          {item.body ? <p className={lines ? 'is-ruled' : ''}>{item.body}</p> : null}
+          {preview ? <p className={lines ? 'is-ruled' : ''}>{preview}</p> : null}
         </div>
       ) : (
         <div className="md-card-caption"><h3>{item.title}</h3></div>
@@ -91,6 +131,12 @@ export function Card({ item: raw, onOpen }) {
       <footer className="md-card-foot">
         <span className={`md-dot status-${item.status}`} title={t(STATUS_LABEL[item.status])} />
         <span className="md-card-source">{item.kind === 'web' && item.url ? hostOf(item.url) : item.source || t(KIND_LABEL[item.kind])}</span>
+        {attCount > 0 ? <span className="md-card-micro" title={t('{n} 份参考附件', { n: attCount })}><Icon name="fileText" size={11} />{attCount}</span> : null}
+        {takesCount > 0 ? (
+          <span className="md-card-micro" title={t('{n} 条录像', { n: takesCount })}><Icon name="film" size={11} />{takesCount}</span>
+        ) : hasSpoken ? (
+          <span className="md-card-micro" title={t('含口播稿')}><Icon name="chat" size={11} /></span>
+        ) : null}
         <ScoreBadge item={item} />
         <span className="md-card-time">{running ? <span className="md-shimmer">{t('正在成稿')}</span> : item.production?.status === 'done' ? t('已成稿') : item.scheduledAt && item.status !== 'published' ? relativeDay(item.scheduledAt) : ''}</span>
       </footer>

@@ -6,10 +6,10 @@ import { MAX_FILES_PER_ADD, MAX_TOTAL_CHARS } from '../src/material-limits.js'
 
 const BASE = 'media-desk/'
 
-/** 地址后面带 #board、#pipeline 这类片段时直接打开那一页，方便把大屏固定在一块屏幕上。 */
+/** 地址后面带 #board、#pipeline 这类片段时直接打开那一页；默认进「灵感」页，打开工作台就能直接记灵感或拖入附件开写。 */
 function initialView() {
   const wanted = typeof location === 'undefined' ? '' : location.hash.slice(1)
-  return ['board', 'sources', 'home', 'content', 'schedule', 'publish', 'video', 'insights', 'rivals', 'style'].includes(wanted) ? wanted : 'board'
+  return ['board', 'sources', 'home', 'content', 'schedule', 'publish', 'video', 'insights', 'rivals', 'style'].includes(wanted) ? wanted : 'home'
 }
 
 // 助手栏默认收起；用户在这次会话里打开过，才记住「开着」，下次进来还开着
@@ -29,8 +29,8 @@ function rememberDock(open) {
 }
 
 let snapshot = {
-  state: null, model: null, modelOk: null, modelError: null, canUndo: false, error: null,
-  view: initialView(), mode: 'scatter', focusId: null, sheetOrigin: null, dockOpen: sessionDock(), studioDock: false, chatQuote: null, query: '', kindFilter: 'all', tagFilter: null, related: null,
+  state: null, board: null, boardAt: 0, model: null, modelOk: null, modelError: null, canUndo: false, error: null,
+  view: initialView(), mode: 'scatter', focusId: null, sheetOrigin: null, dockOpen: sessionDock(), studioDock: true, chatQuote: null, query: '', kindFilter: 'all', tagFilter: null, related: null, publishFilter: null,
   live: {}, settings: null, settingsOpen: false, modelPickOpen: false, thinking: false, chatLive: null, toast: null, capture: null, dialog: null,
   // 命令面板、快捷键表；reload 加一会让当前页重新挂载（重新抓取信息源用）
   palette: false, shortcutSheet: false, reload: 0,
@@ -53,8 +53,59 @@ function subscribe(fn) {
   return () => listeners.delete(fn)
 }
 
+function shallowEqual(a, b) {
+  if (Object.is(a, b)) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i += 1) if (!Object.is(a[i], b[i])) return false
+    return true
+  }
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  for (const k of keysA) if (!Object.prototype.hasOwnProperty.call(b, k) || !Object.is(a[k], b[k])) return false
+  return true
+}
+
 export function useDesk(selector) {
-  return React.useSyncExternalStore(subscribe, () => selector(snapshot))
+  const cache = React.useRef({ init: false, val: undefined })
+  return React.useSyncExternalStore(subscribe, () => {
+    const next = selector(snapshot)
+    if (cache.current.init && shallowEqual(cache.current.val, next)) return cache.current.val
+    cache.current = { init: true, val: next }
+    return next
+  })
+}
+
+/** 从 onPaste 事件提取剪贴板中的截图或文件（纯文本粘贴返回空数组，不拦截文字粘贴）。 */
+export function extractClipboardFiles(clipboardData) {
+  if (!clipboardData) return []
+  const out = []
+  const seen = new Set()
+  const stamp = () => {
+    const d = new Date()
+    const p = n => String(n).padStart(2, '0')
+    return `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+  }
+  for (const item of clipboardData.items ?? []) {
+    if (item.kind !== 'file') continue
+    const file = item.getAsFile?.()
+    if (!file) continue
+    const key = `${file.name}:${file.size}:${file.type}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (!file.name || /^image\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
+      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+      out.push(new File([file], `截图-${stamp()}.${ext}`, { type: file.type }))
+    } else {
+      out.push(file)
+    }
+  }
+  if (!out.length && clipboardData.files?.length) {
+    for (const f of clipboardData.files) out.push(f)
+  }
+  return out
 }
 
 async function request(path, body) {
@@ -79,11 +130,14 @@ export function report(err) {
 
 export async function loadDesk() {
   try {
-    // 先读设置拿到语言偏好，示例数据按这个语言返回
+    // 先读设置拿到语言偏好，示例数据按这个语言返回；首屏就在大屏时把 board 并行拉回来，少一轮等待与跳动
     const settings = await request('settings')
     setLanguagePreference(settings.language)
-    const data = await request('state')
-    setDesk({ settings, state: data.state, nativeAgent: data.nativeAgent === true, model: data.model, modelOk: data.modelOk, modelError: data.modelError, canUndo: data.canUndo, error: null })
+    const [data, board] = await Promise.all([
+      request('state'),
+      snapshot.view === 'board' ? request('board').catch(() => null) : Promise.resolve(null),
+    ])
+    setDesk({ settings, state: data.state, ...(board ? { board, boardAt: Date.now() } : {}), nativeAgent: data.nativeAgent === true, model: data.model, modelOk: data.modelOk, modelError: data.modelError, canUndo: data.canUndo, error: null })
   } catch (err) {
     setDesk({ error: err.message })
   }
@@ -112,27 +166,159 @@ export async function undo() {
   }
 }
 
-export function openItem(id, origin = null) {
-  setDesk({ focusId: id, sheetOrigin: origin, studioDock: true })
+export function openItem(id, origin = null, extra = {}) {
+  setDesk({ focusId: id, sheetOrigin: origin, studioDock: true, ...extra })
 }
 
 export function closeItem() {
   setDesk({ focusId: null, sheetOrigin: null, studioDock: false, chatQuote: null })
 }
 
-/** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { withImages, goal } = {}) {
+/** 原样上传任意附件（PDF、Office、图片、长文档、数据表、代码等）到工作台本地目录，供原生会话直接解析。 */
+export async function uploadAttachment(file, itemId = null) {
+  const params = new URLSearchParams({ name: file.name || 'attachment' })
+  if (itemId) params.set('itemId', itemId)
+  const res = await fetch(`${BASE}attach?${params.toString()}`, {
+    method: 'POST',
+    headers: {
+      'content-type': file.type || 'application/octet-stream',
+      'x-media-desk-lang': lang(),
+    },
+    body: file,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || t('附件上传失败'))
+  if (data.state) setDesk({ state: data.state, canUndo: true })
+  return data
+}
+
+function optimisticRunningItem(item, goal) {
+  const g = goal || item?.creation?.goal || 'xhs'
+  return {
+    ...item,
+    creation: { ...(item.creation ?? {}), ...(goal ? { goal } : {}) },
+    production: {
+      ...(item.production ?? {}),
+      status: 'running',
+      stage: 'connecting',
+      engine: 'dsh-native',
+      format: g === 'script' ? 'script' : 'article',
+      title: item.production?.title || item.title || '',
+      article: '',
+      images: item.production?.images ?? [],
+      shots: item.production?.shots ?? [],
+      startedAt: new Date().toISOString(),
+      error: null,
+    },
+  }
+}
+
+function optimisticLive(phase = 'connecting') {
+  const now = Date.now()
+  return {
+    native: true,
+    running: true,
+    phase,
+    startedAt: now,
+    updatedAt: now,
+    text: '',
+    reply: '',
+    reasoning: '',
+    activity: [],
+  }
+}
+
+/** 记下灵感，或带附件与要求立即进入工作区流式成稿。 */
+export async function launchIdea(payload) {
   try {
-    const data = await request('produce', { id, ...(goal ? { goal } : {}), ...(typeof withImages === 'boolean' ? { withImages } : {}) })
-    setDesk({ state: data.state })
+    const startNow = payload.startNow !== false
+    const data = await request('idea/launch', { ...payload, ...(startNow ? { asyncStart: true } : {}) })
+    const nextState = startNow && data.started && data.id && data.state?.items
+      ? { ...data.state, items: data.state.items.map(item => (item.id === data.id ? optimisticRunningItem(item, payload.goal) : item)) }
+      : data.state
+    setDesk(s => ({
+      state: nextState,
+      canUndo: true,
+      ...(startNow && data.started && data.id ? { live: { ...s.live, [data.id]: optimisticLive(payload.urls?.length ? 'tool' : 'connecting') } } : {}),
+    }))
+    if (startNow && data.id) {
+      openItem(data.id)
+    }
+    if (data.errors?.length) {
+      toast(t('已保存，部分链接提示：{msg}', { msg: data.errors.slice(0, 2).join('；') }), { error: true })
+    } else if (data.nativeMissing && startNow) {
+      toast(t('灵感与附件已保存（独立预览暂不支持生成，在本地打开工作台即可开写）'))
+    } else if (!startNow) {
+      toast(t('已记下灵感'), { undo: true })
+    }
+    return data
   } catch (err) {
+    report(err)
+    return null
+  }
+}
+
+/** 一键成稿。点击瞬间即进入可视成稿状态，后台异步拉起会话。 */
+export async function runProduce(id, { withImages, goal, mode, audience, thesis } = {}) {
+  const prevItem = snapshot.state?.items?.find(i => i.id === id)
+  const prevLive = snapshot.live?.[id]
+  if (prevItem) {
+    setDesk(s => ({
+      state: {
+        ...s.state,
+        items: s.state.items.map(item => (item.id === id ? optimisticRunningItem(item, goal) : item)),
+      },
+      live: { ...s.live, [id]: optimisticLive('connecting') },
+    }))
+  }
+  try {
+    const data = await request('produce', {
+      id,
+      asyncStart: true,
+      ...(goal ? { goal } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(audience !== undefined ? { audience } : {}),
+      ...(thesis !== undefined ? { thesis } : {}),
+      ...(typeof withImages === 'boolean' ? { withImages } : {}),
+    })
+    if (data.state?.items) {
+      setDesk(s => ({
+        state: {
+          ...data.state,
+          items: data.state.items.map(item => (item.id === id && data.launching && item.production?.status !== 'running'
+            ? optimisticRunningItem(item, goal)
+            : item)),
+        },
+      }))
+    }
+  } catch (err) {
+    if (prevItem) {
+      setDesk((s) => {
+        const nextLive = { ...s.live }
+        if (prevLive) nextLive[id] = prevLive
+        else delete nextLive[id]
+        return {
+          state: { ...s.state, items: s.state.items.map(item => (item.id === id ? prevItem : item)) },
+          live: nextLive,
+        }
+      })
+    }
     report(err)
   }
 }
 
 export async function cancelProduce(id) {
   try {
-    await request('produce/cancel', { id })
+    const data = await request('produce/cancel', { id })
+    setDesk((s) => {
+      const nextLive = { ...s.live }
+      delete nextLive[id]
+      return {
+        ...(data?.state ? { state: data.state } : {}),
+        live: nextLive,
+      }
+    })
+    toast(t('已取消本次成稿'))
   } catch (err) {
     report(err)
   }
@@ -147,24 +333,64 @@ export async function regenAsset(id, target) {
   }
 }
 
+export async function rewriteSelection(id, { selection, mode = 'humanize', instruction = '', beforeContext, afterContext }) {
+  try {
+    return await request('produce/rewrite-selection', {
+      id,
+      selection,
+      mode,
+      instruction,
+      ...(typeof beforeContext === 'string' ? { beforeContext } : {}),
+      ...(typeof afterContext === 'string' ? { afterContext } : {}),
+    })
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
 function mergeProduction(id, production, status) {
   setDesk(s => ({ state: { ...s.state, items: s.state.items.map(item => (item.id === id ? { ...item, production, ...(status ? { status } : {}) } : item)) } }))
 }
 
-/** 轮询进度，返回停止函数。 */
+/** 轮询进度（按签名增量同步，未变化时零拷贝零重渲染），返回停止函数。 */
 export function watchProduction(id) {
   let stopped = false
+  let sig = ''
+  let chatSig = ''
   const tick = async () => {
     while (!stopped) {
+      let waitMs = 260
       try {
-        const data = await request(`production?id=${encodeURIComponent(id)}`)
+        const qs = new URLSearchParams({ id })
+        if (sig) qs.set('sig', sig)
+        if (chatSig) qs.set('chatSig', chatSig)
+        const data = await request(`production?${qs.toString()}`)
         if (stopped) return
-        setDesk(s => ({ live: { ...s.live, [id]: data.live }, ...(data.chat ? { state: { ...s.state, chat: data.chat } } : {}) }))
-        if (data.production) mergeProduction(id, data.production, data.status)
+        if (data.sig) sig = data.sig
+        if (data.chatSig) chatSig = data.chatSig
+        if (!data.unchanged) {
+          setDesk((s) => {
+            let nextState = s.state
+            if (data.chat) nextState = { ...nextState, chat: data.chat }
+            if (data.production && nextState?.items) {
+              nextState = {
+                ...nextState,
+                items: nextState.items.map(item => (item.id === id ? { ...item, production: data.production, ...(data.status ? { status: data.status } : {}) } : item)),
+              }
+            }
+            return {
+              live: { ...s.live, [id]: data.live },
+              ...(nextState !== s.state ? { state: nextState } : {}),
+            }
+          })
+        } else {
+          waitMs = 420
+        }
       } catch {
-        // 连接抖动时下一轮再试
+        waitMs = 500
       }
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, waitMs))
     }
   }
   tick()
@@ -246,12 +472,17 @@ export async function sendChat(text, { itemId = null, outputKind } = {}) {
     const { liveId } = await request('chat', { message, focusId: focusId ?? undefined, outputKind })
     let done = null
     let failures = 0
+    let lastLiveSig = ''
     const started = Date.now()
     while (!done && Date.now() - started < 900_000) {
       await new Promise(r => setTimeout(r, 350))
       let live
-      try { live = await request('chat/live', { id: liveId }); failures = 0 } catch (error) { if (++failures < 3) continue; throw new Error(`读取 DSH 运行进度失败：${error.message}`) }
-      setDesk(s => ({ chatLive: live.text || null, chatReasoning: live.reasoning ?? '', chatProgress: { phase: live.phase, startedAt: live.startedAt ?? started, updatedAt: live.updatedAt }, chatActivity: live.activity ?? [], ...(focusId && live.drafts ? { live: { ...s.live, [focusId]: { ...live, native: true, drafts: live.drafts, text: live.drafts.article?.text ?? live.drafts.spoken?.text ?? '' } } } : {}) }))
+      try { live = await request('chat/live', { id: liveId }); failures = 0 } catch (error) { if (++failures < 3) continue; throw new Error(`读取运行进度失败：${error.message}`) }
+      const liveSig = `${live.phase ?? ''}|${live.updatedAt ?? ''}|${(live.text ?? '').length}|${(live.reasoning ?? '').length}|${live.activity?.length ?? 0}|${live.done ? 1 : 0}`
+      if (liveSig !== lastLiveSig) {
+        lastLiveSig = liveSig
+        setDesk(s => ({ chatLive: live.text || null, chatReasoning: live.reasoning ?? '', chatProgress: { phase: live.phase, startedAt: live.startedAt ?? started, updatedAt: live.updatedAt }, chatActivity: live.activity ?? [], ...(focusId && live.drafts ? { live: { ...s.live, [focusId]: { ...live, native: true, drafts: live.drafts, text: live.drafts.article?.text ?? live.drafts.spoken?.text ?? '' } } } : {}) }))
+      }
       if (live.done) { done = live; break }
     }
     if (done?.result) {
@@ -321,10 +552,10 @@ export async function captureUrl(url, extra = {}) {
   try {
     const data = await request('capture-url', { url, ...extra })
     setDesk({ state: data.state, canUndo: true })
-    toast(t('已收藏到灵感'), { undo: true })
+    toast(data.snapshotSaved ? t('已收藏到灵感，并保存网页全文快照') : t('已收藏到灵感'), { undo: true })
     return data.id
   } catch (err) {
-    report(err)
+    if (!extra.silentError) report(err)
     return null
   }
 }
@@ -343,15 +574,18 @@ const MATERIAL_MAX_BYTES = 2_000_000
  * @param {FileList|File[]} fileList - 选中的文件。
  * @param {number} [usedChars] - 这条灵感已有素材的字数（合计上限要算上它们）。
  */
-export async function readPickedMaterials(fileList, usedChars = 0) {
+export const MATERIAL_EXT_RE = /\.(md|markdown|txt|json|jsonl|csv|tsv|yaml|yml|toml|xml|html|htm|srt|vtt|log|py|js|mjs|ts|tsx|jsx|sh|sql)$/i
+export const MATERIAL_ACCEPT = '.md,.markdown,.txt,.json,.jsonl,.csv,.tsv,.yaml,.yml,.toml,.xml,.html,.htm,.srt,.vtt,.log,.py,.js,.mjs,.ts,.tsx,.jsx,.sh,.sql,text/markdown,text/plain,application/json,text/csv,text/html'
+
+export async function readPickedMaterials(fileList, usedChars = 0, { maxCount = MAX_MATERIALS_PER_ADD } = {}) {
   const all = [...(fileList ?? [])]
-  const picked = all.slice(0, MAX_MATERIALS_PER_ADD)
+  const picked = all.slice(0, maxCount)
   const files = []
-  const errors = all.length > picked.length ? [{ name: t('另外 {n} 个文件', { n: all.length - picked.length }), reason: t('一次最多加 {n} 份素材', { n: MAX_MATERIALS_PER_ADD }) }] : []
+  const errors = all.length > picked.length ? [{ name: t('另外 {n} 个文件', { n: all.length - picked.length }), reason: t('一次最多加 {n} 份素材', { n: maxCount }) }] : []
   let left = MAX_TOTAL_CHARS - usedChars
   for (const file of picked) {
-    if (!/\.(md|markdown|txt)$/i.test(file.name)) {
-      errors.push({ name: file.name, reason: t('只能加 .md、.markdown 或 .txt 文件') })
+    if (!MATERIAL_EXT_RE.test(file.name)) {
+      errors.push({ name: file.name, reason: t('暂不支持直接解析此二进制格式（若是 PDF/Office 文档，可贴本机路径供写稿读取）') })
       continue
     }
     if (file.size > MATERIAL_MAX_BYTES) {
@@ -361,6 +595,9 @@ export async function readPickedMaterials(fileList, usedChars = 0) {
     let text
     try {
       text = await file.text()
+      if (/\.html?$/i.test(file.name)) {
+        text = text.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ')
+      }
     } catch (err) {
       errors.push({ name: file.name, reason: err.message })
       continue
@@ -397,9 +634,9 @@ export async function removeMaterial(id, materialId) {
 }
 
 /** 设置里的写作工作流：探测能读到的文档，返回每份的字数和勾选状态。selected 为 undefined 时用已保存的勾选。 */
-export async function scanWritingFlow({ paths, selected } = {}) {
+export async function scanWritingFlow({ paths, selected, target } = {}) {
   try {
-    return await request('writing-flow/scan', { ...(Array.isArray(paths) ? { paths } : {}), ...(selected !== undefined ? { selected } : {}) })
+    return await request('writing-flow/scan', { ...(Array.isArray(paths) ? { paths } : {}), ...(selected !== undefined ? { selected } : {}), ...(target ? { target } : {}) })
   } catch (err) {
     return { docs: [], error: err.message }
   }
@@ -486,8 +723,14 @@ export async function exportSkills() {
   }
 }
 
-export function fetchBoard() {
-  return request('board')
+export async function fetchBoard() {
+  const board = await request('board')
+  setDesk({ board, boardAt: Date.now() })
+  return board
+}
+
+export function openPublish(query = '', platform = '', phase = 'all') {
+  setDesk({ view: 'publish', focusId: null, publishFilter: { query, platform, phase, key: Date.now() } })
 }
 
 // Cache UI data between visits; the host persists per-source daily results.
@@ -495,6 +738,12 @@ export const sourceSnapshots = { feeds: null, hot: null, builtin: {} }
 export async function fetchFeeds(force = false, cachedOnly = false) {
   const data = await request('feeds/fetch', { force, cachedOnly })
   sourceSnapshots.feeds = data
+  return data
+}
+
+export async function fetchMorningBrief() {
+  const data = await request('sources/brief', {})
+  sourceSnapshots.brief = data
   return data
 }
 export async function fetchHot(sources, force = false, cachedOnly = false) {
@@ -551,17 +800,21 @@ export async function refreshRivals(ids) {
   return data
 }
 
-/** 按填好的主页地址读各平台账号数据；platforms 只读这几个（刚填好地址时）。 */
+/** 按填好的主页地址和创作后台读各平台账号数据；用户主动点击时带 force 立即读取，不被 10 分钟间隔拦住。 */
 export async function refreshFollowers(platforms) {
-  const data = await request('followers/refresh', platforms ? { platforms } : {})
-  setDesk({ state: data.state })
+  const data = await request('followers/refresh', { ...(platforms ? { platforms } : {}), force: true })
+  const board = await request('board').catch(() => null)
+  setDesk({ state: data.state, ...(board ? { board, boardAt: Date.now() } : {}) })
   return data.results
 }
 
-/** 打开大屏时在后台补读公开接口（距上次读到超过 6 小时才会真的读）。 */
-export async function refreshPublic() {
-  const data = await request('followers/refresh', { scope: 'public' })
-  if (!data.skipped) setDesk({ state: data.state })
+/** 打开或刷新大屏时在后台补读公开接口（默认 6 小时；页面刷新时传更短的 maxAgeMs）。 */
+export async function refreshPublic(maxAgeMs) {
+  const data = await request('followers/refresh', { scope: 'public', ...(maxAgeMs ? { maxAgeMs } : {}) })
+  if (!data.skipped) {
+    const board = await request('board').catch(() => null)
+    setDesk({ state: data.state, ...(board ? { board, boardAt: Date.now() } : {}) })
+  }
   return data
 }
 
@@ -714,6 +967,18 @@ export async function claimAction(kind, payload) {
 export async function generateTitles(id, platform) {
   try {
     return await request('titles/generate', { id, ...(platform ? { platform } : {}) })
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
+/** 从本机 Obsidian 的 note-to-red 插件同步头像、昵称、页脚名言与默认主题。 */
+export async function syncObsidianYanqi() {
+  try {
+    const data = await request('yanqi/sync-obsidian', {})
+    if (data?.state) setDesk({ state: data.state, canUndo: true })
+    return data
   } catch (err) {
     report(err)
     return null

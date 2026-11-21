@@ -49,6 +49,7 @@
   },
   "files": [
     "src",
+    "client/layouts/yanqi-themes.js",
     "dist",
     "assets",
     "templates",

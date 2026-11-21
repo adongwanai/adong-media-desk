@@ -1,7 +1,7 @@
 // 对标卡片里的作品：用户贴进来的作品表，按这位作者自己的水平评级（算法在 src/rival-score.js），可以记为灵感、标跟进状态。
 import React from 'react'
 import { openInBrowser } from './browser.js'
-import { dispatchOps } from './desk.js'
+import { dispatchOps, launchIdea } from './desk.js'
 import { plural, t } from './i18n.js'
 import { parseWorksTable } from './rival-works.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
@@ -109,8 +109,23 @@ function ratioWhy(work) {
   return work.grade === '虚高' ? `${base}${t('；互动值没过门槛 {floor}，不算爆', { floor: compact(work.floor) })}` : base
 }
 
+export function launchCounterTopic({ title, url, source, ratio }) {
+  const ratioNote = Number.isFinite(ratio) && ratio > 1 ? `（互动超该账号近期中位数 ${ratio.toFixed(1)}×）` : ''
+  const prompt = `对标来源${source ? `「${source}」` : ''}的爆款内容《${title}》${ratioNote}${url ? `\n原始链接：${url}` : ''}\n\n请先检索并拆解这条内容打中读者的核心痛点与开头钩子结构；然后站在我的一线实践视角，采用「A · 争议判断（同意哪一半 + 补充真实落地隐性代价/边界条件）」切入，直接给出一篇差异化、有鲜明个人判断的成稿（严禁复述或抄袭原帖）。`
+  return launchIdea({
+    title,
+    url: url || undefined,
+    body: source ? `对标拆解自：${source}${ratioNote}` : '',
+    goal: 'xhs',
+    mode: 'A',
+    prompt,
+    startNow: true,
+  })
+}
+
 function WorkRow({ work, name }) {
   const keep = () => dispatchOps([{ op: 'add_item', kind: 'web', title: work.title, source: name, ...(work.url ? { url: work.url } : {}) }], { label: t('记为灵感') })
+  const counterWrite = () => launchCounterTopic({ title: work.title, url: work.url, source: name, ratio: work.ratio })
   return (
     <tr>
       <td>{work.grade ? <span className={`md-rw-grade ${GRADE_CLASS[work.grade] ?? ''}`}>{t(work.grade)}</span> : null}</td>
@@ -127,7 +142,10 @@ function WorkRow({ work, name }) {
         </select>
       </td>
       <td className="md-rw-acts">
-        <button type="button" className="md-pill is-small" onClick={keep}><Icon name="spark" size={12} />{t('记为灵感')}</button>
+        <button type="button" className="md-pill is-small is-primary" onClick={counterWrite} title={t('拆解这条的钩子结构，用「同意一半/补充真实代价」反角度直接开写')}>
+          <Icon name="bolt" size={12} />{t('反切入开写')}
+        </button>
+        <button type="button" className="md-pill is-small" onClick={keep}>{t('记为灵感')}</button>
         <IconButton icon="trash" size={13} label={t('删除这条作品')} onClick={() => dispatchOps([{ op: 'delete_rival_work', id: work.id }], { label: t('删除作品') })} />
       </td>
     </tr>

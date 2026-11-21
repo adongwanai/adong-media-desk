@@ -2,11 +2,12 @@
 // 主题、骨架、封面来自言起 YANQI（阿东玩AI，https://github.com/adongwanai/yanqi-obsidian），
 // 言起基于 Note to RED（Yeban8090，MIT，https://github.com/Yeban8090/note-to-red）。
 import React from 'react'
-import { dispatchOps, hostImages, toast, useDesk } from '../desk.js'
+import { HUMANIZE_SKILL_PROMPT } from '../../src/draft-quality.js'
+import { dispatchOps, generateVersions, hostImages, sendChat, setDesk, toast, updateVersion, useDesk, watchProduction } from '../desk.js'
 import { t } from '../i18n.js'
 import { Icon, Segmented } from '../ui.jsx'
 import { CardsPreview, XHS_MAX_PAGES } from './cards-preview.jsx'
-import { CardsDialog } from '../version-flow.jsx'
+import { CardsDialog, coverOf } from '../version-flow.jsx'
 import { Credit, FontControls, ThemeEditor, ThemeGallery } from './controls.jsx'
 import { usePrefs } from './prefs.js'
 import { SplitFrame, articleSaver, useArticleDraft, useSettled } from './split.jsx'
@@ -76,7 +77,7 @@ function WechatPreview({ production, title, itemId, onSave }) {
   const themes = React.useMemo(() => (draftTheme ? [...custom, draftTheme] : custom), [custom, draftTheme])
   const themeId = draftTheme ? draftTheme.id : prefs.theme
   // 预览按块渲染，带行号；data-line 放在外面那层，块的 html 不随行号变，改一处只重画一块
-  const parts = React.useMemo(() => wechatParts(article, themeId, { font: prefs.font, fontSize: prefs.fontSize, themes, figures, images: 'preview' }), [article, themeId, prefs.font, prefs.fontSize, themes, figures])
+  const parts = React.useMemo(() => wechatParts(article, themeId, { font: prefs.font, fontSize: prefs.fontSize, themes, figures, images: 'preview', linkFootnotes: Boolean(prefs.linkFootnotes) }), [article, themeId, prefs.font, prefs.fontSize, prefs.linkFootnotes, themes, figures])
   const [copying, setCopying] = React.useState(false)
   const local = React.useMemo(() => localImages(article, figures), [article, figures])
 
@@ -113,7 +114,7 @@ function WechatPreview({ production, title, itemId, onSave }) {
         images = result.urls
         missing = Object.keys(result.errors ?? {})
       }
-      const out = wechatParts(draft.text, themeId, { font: prefs.font, fontSize: prefs.fontSize, themes, figures, images })
+      const out = wechatParts(draft.text, themeId, { font: prefs.font, fontSize: prefs.fontSize, themes, figures, images, linkFootnotes: Boolean(prefs.linkFootnotes) })
       const html = `<section style="${out.root}">${out.blocks.map(block => block.html).join('')}</section>`
       await copyRich(html, draft.text)
       const lost = [...new Set([...out.missing, ...missing.map(src => src.split('/').pop())])]
@@ -181,7 +182,44 @@ function WechatPreview({ production, title, itemId, onSave }) {
       title={t('公众号长文')}
       meta={meta}
       panel={panel}
-      previewBar={<FontControls font={prefs.font} size={prefs.fontSize} onFont={font => update({ font })} onSize={fontSize => update({ fontSize })} />}
+      editingTheme={editing}
+      onExitTheme={() => { setEditing(false); setDraftTheme(null) }}
+      previewBar={(
+        <>
+          <FontControls font={prefs.font} size={prefs.fontSize} onFont={font => update({ font })} onSize={fontSize => update({ fontSize })} />
+          <button
+            type="button"
+            className={`md-pill is-small ${prefs.linkFootnotes ? 'is-on' : ''}`}
+            aria-pressed={Boolean(prefs.linkFootnotes)}
+            title={t('公众号正文外链无法点击：开启后自动换成上标编号 [1]，并在文末集中列出参考链接')}
+            onClick={() => update({ linkFootnotes: !prefs.linkFootnotes })}
+          >
+            {t('外链转脚注')}{parts.externalLinks ? ` (${parts.externalLinks})` : ''}
+          </button>
+          <button
+            type="button"
+            className="md-pill is-small"
+            title={t('在光标处插入高亮提示框（> [!TIP]）')}
+            onClick={() => editorApi.current?.insertBlock('> [!TIP] 核心提示\n> 在这里写重点结论或避坑提醒')}
+          >
+            + {t('提示框')}
+          </button>
+          {itemId ? (
+            <button
+              type="button"
+              className="md-pill is-small"
+              title={t('调用 Humanizer Skill（中文 22 特征 + 结构去 AI 味）对全文精修去 AI 腔，保留事实与配图')}
+              onClick={async () => {
+                await draft.flush()
+                setDesk({ studioDock: true })
+                await sendChat(HUMANIZE_SKILL_PROMPT, { itemId })
+              }}
+            >
+              <Icon name="spark" size={12} />{t('Humanizer 去AI味')}
+            </button>
+          ) : null}
+        </>
+      )}
       preview={preview}
       draft={draft}
       editorPrefs={editorPrefs}
@@ -224,10 +262,81 @@ export function LayoutSwitch({ value, onChange }) {
   )
 }
 
+function XhsCardsWorkspace({ production, title, itemId, onOpenVersions }) {
+  const version = production.versions?.['小红书']
+  const condensedRaw = version?.status === 'done' ? String(version.cards ?? '').trim() : ''
+  const running = version?.status === 'running'
+  const isVeryLong = String(production.article ?? '').length > 2800
+  const [source, setSource] = React.useState('full')
+
+  React.useEffect(() => (running && itemId ? watchProduction(itemId) : undefined), [running, itemId])
+
+  const cover = React.useMemo(() => coverOf(condensedRaw, version?.title || title), [condensedRaw, version?.title, title])
+  const condensedProd = React.useMemo(() => ({ ...production, article: cover.article }), [production, cover.article])
+  const headPrefix = condensedRaw ? condensedRaw.slice(0, condensedRaw.length - cover.article.length) : ''
+  const saveCondensed = React.useMemo(
+    () => (itemId ? async text => Boolean(await updateVersion({ id: itemId, platform: '小红书', cards: headPrefix + text })) : undefined),
+    [itemId, headPrefix]
+  )
+
+  const useCondensed = source === 'condensed' && Boolean(condensedRaw)
+
+  return (
+    <div className="md-xhs-wrap">
+      {isVeryLong || condensedRaw || running ? (
+        <div className="md-xhs-source-bar">
+          {condensedRaw ? (
+            <Segmented
+              label={t('图文卡片内容源')}
+              value={useCondensed ? 'condensed' : 'full'}
+              onChange={setSource}
+              options={[
+                { value: 'condensed', label: t('精简图文卡') },
+                { value: 'full', label: t('母稿全文') },
+              ]}
+            />
+          ) : (
+            <span className="md-xhs-source-hint">{t('当前为长文全文直排；可提炼一份适合小红书阅读的精简卡片版（不改动原长文）')}</span>
+          )}
+          <span className="md-grow" />
+          {itemId ? (
+            <button
+              type="button"
+              className="md-pill is-small"
+              disabled={running}
+              onClick={() => generateVersions(itemId, ['小红书'])}
+            >
+              <Icon name="spark" size={12} />
+              {running ? t('正在提炼精简卡…') : condensedRaw ? t('重新提炼精简卡') : t('从长文提炼精简卡')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {useCondensed ? (
+        <CardsPreview
+          key={`${itemId}:condensed`}
+          production={condensedProd}
+          title={cover.title}
+          onSave={saveCondensed}
+          mediaKey={itemId ? `${itemId}:小红书` : undefined}
+        />
+      ) : (
+        <CardsPreview
+          key={`${itemId}:full`}
+          production={production}
+          title={title}
+          itemId={itemId}
+          overLimit={count => <XhsLimitNote count={count} production={production} title={title} itemId={itemId} onOpenVersions={onOpenVersions} />}
+        />
+      )}
+    </div>
+  )
+}
+
 /** 平台版本的预览区，替换掉稿面的格子。itemId 用来保存左边改过的正文和每篇自己的图片调整。 */
 export function LayoutPreview({ mode, production, title, itemId, onOpenVersions }) {
   if (mode === 'wechat') return <WechatPreview production={production} title={title} itemId={itemId} />
-  if (mode === 'xhs') return <CardsPreview production={production} title={title} itemId={itemId} overLimit={count => <XhsLimitNote count={count} production={production} title={title} itemId={itemId} onOpenVersions={onOpenVersions} />} />
+  if (mode === 'xhs') return <XhsCardsWorkspace production={production} title={title} itemId={itemId} onOpenVersions={onOpenVersions} />
   return null
 }
 

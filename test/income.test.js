@@ -48,3 +48,20 @@ test('删一笔：合计跟着变；删不存在的报错', () => {
   assert.equal(computeIncome(state, NOW).total, 200)
   assert.throws(() => handlers.delete_income(state, { id: 'nope' }), /找不到/)
 })
+
+test('改一笔：金额、来源、备注、关联内容和日期都能改，校验与新增一致', () => {
+  const state = { items: [{ id: 'it_2', title: '年度复盘' }], income: [] }
+  const { target } = handlers.add_income(state, { amount: 1500, source: '商单', note: '首款', date: day(-3) }, NOW.toISOString())
+  handlers.update_income(state, { id: target, amount: 4500, source: '付费咨询', itemId: 'it_2', note: '  全款结清  ', date: day(0) }, NOW.toISOString())
+  const income = computeIncome(state, NOW)
+  assert.equal(income.today, 4500)
+  assert.equal(income.total, 4500)
+  assert.deepEqual([income.recent[0].source, income.recent[0].title, income.recent[0].note], ['付费咨询', '年度复盘', '全款结清'])
+  // 清空关联内容与备注
+  handlers.update_income(state, { id: target, itemId: '', note: '' }, NOW.toISOString())
+  const cleared = computeIncome(state, NOW)
+  assert.equal(cleared.recent[0].title, null)
+  assert.equal(cleared.recent[0].note, undefined)
+  assert.throws(() => handlers.update_income(state, { id: 'nope', amount: 100 }, NOW.toISOString()), /找不到/)
+  assert.throws(() => handlers.update_income(state, { id: target, amount: -10 }, NOW.toISOString()), /大于 0/)
+})

@@ -5,6 +5,7 @@ import { t } from '../i18n.js'
 import { Icon } from '../ui.jsx'
 import { validateLayoutTheme } from '../../src/layout-theme.js'
 import { CARD_RATIOS, COVER_TEMPLATES, COVER_TITLE_MAX, CARD_TEMPLATES, EXPORT_TIERS, HEADING_LEVELS, TIME_FORMATS, YANQI_COVERS, cardSize, formatDate } from './cards.js'
+import { DEFAULT_SIGNATURE } from './signature.js'
 import { THEME_KNOBS, applyKnob, knobValue, newThemeId } from './theme-edit.js'
 import { FONT_SIZE_RANGE, YANQI_FONTS, YANQI_GROUPS, YANQI_THEMES, clampFontSize, cssValue, fontFamily, themeSwatch } from './yanqi.js'
 
@@ -48,7 +49,11 @@ function Swatch({ theme, font }) {
 export function ThemeGallery({ value, onChange, font, custom = [], onEdit, onDelete }) {
   const [group, setGroup] = React.useState('')
   const [query, setQuery] = React.useState('')
-  const all = React.useMemo(() => [...custom.map(theme => ({ ...theme, group: MINE, mine: true })), ...YANQI_THEMES], [custom])
+  const all = React.useMemo(() => [
+    ...custom.map(theme => ({ ...theme, group: MINE, mine: true })),
+    ...YANQI_THEMES.filter(theme => theme.id === 'adong-xhs-dense'),
+    ...YANQI_THEMES.filter(theme => theme.id !== 'adong-xhs-dense'),
+  ], [custom])
   const current = all.find(theme => theme.id === value) ?? YANQI_THEMES[0]
   const needle = query.trim().toLowerCase()
   const shown = all.filter(theme => (!group || theme.group === group) && (!needle || [theme.name, t(theme.name), theme.id, theme.description, theme.group].some(text => String(text ?? '').toLowerCase().includes(needle))))
@@ -101,7 +106,21 @@ export function ThemeGallery({ value, onChange, font, custom = [], onEdit, onDel
 export function ThemeEditor({ base, onDraft, onSave, onClose, onError }) {
   const [styles, setStyles] = React.useState(base.styles)
   const [name, setName] = React.useState(base.mine ? base.name : '')
+  const rootRef = React.useRef(null)
   const groups = [...new Set(THEME_KNOBS.map(knob => knob.group))]
+  React.useEffect(() => {
+    const panel = rootRef.current?.closest('.md-yq-panel')
+    if (panel) panel.scrollTop = 0
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
   const change = (knob, value) => {
     const next = applyKnob(styles, knob, value)
     setStyles(next)
@@ -118,9 +137,11 @@ export function ThemeEditor({ base, onDraft, onSave, onClose, onError }) {
     }
   }
   return (
-    <section className="md-yq-group md-yq-editor" aria-label={t('主题编辑器')}>
-      <header className="md-yq-group-head">
-        <h3>{t('主题编辑器')}</h3>
+    <section ref={rootRef} className="md-yq-group md-yq-editor" aria-label={t('主题编辑器')}>
+      <header className="md-yq-group-head md-yq-editor-head">
+        <button type="button" className="md-pill is-small md-yq-back" onClick={onClose} title={t('放弃未保存改动并返回主题列表（Esc）')}>
+          <Icon name="chevL" size={13} />{t('返回主题')}
+        </button>
         <span className="md-yq-group-aside">{t('基于「{name}」', { name: base.mine ? base.name : t(base.name) })}</span>
       </header>
       {groups.map(group => (
@@ -150,11 +171,11 @@ export function ThemeEditor({ base, onDraft, onSave, onClose, onError }) {
         <span>{t('主题名称')}</span>
         <input type="text" value={name} maxLength={30} placeholder={t('比如：我的暖色')} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') save() }} />
       </label>
-      <div className="md-yq-row">
+      <div className="md-yq-row md-yq-editor-foot">
         <button type="button" className="md-pill is-primary is-small" onClick={save}><Icon name="save" size={13} />{base.mine ? t('保存修改') : t('保存为我的主题')}</button>
         <button type="button" className="md-pill is-small" onClick={() => { setStyles(base.styles); onDraft(base.styles) }}><Icon name="undo" size={13} />{t('还原')}</button>
         <span className="md-grow" />
-        <button type="button" className="md-pill is-small" onClick={onClose}>{t('关闭')}</button>
+        <button type="button" className="md-pill is-small" onClick={onClose}>{t('返回主题')}</button>
       </div>
       <p className="md-yq-hint">{t('保存在工作台数据里，长文和图文卡片都能用')}</p>
     </section>
@@ -224,7 +245,7 @@ export function CoverChecks({ checks }) {
 }
 
 /** 言起的 5 种封面 + 新增的固定版式封面；固定版式的封面下面再填槽位。最上面是封面标题（所有封面都用）。 */
-export function CoverPicker({ value, onChange, slots, onSlots, images = [], checks, safeArea, onSafeArea, fallbackTitle = '' }) {
+export function CoverPicker({ value, onChange, slots, onSlots, images = [], checks, safeArea, onSafeArea, coverOnly, onCoverOnly, fallbackTitle = '' }) {
   const template = COVER_TEMPLATES.find(row => row.id === value)
   const row = (list, kind) => (
     <div className={`md-yq-covers is-${kind}`} role="radiogroup" aria-label={t(kind === 'yanqi' ? '言起封面' : '固定版式')}>
@@ -268,6 +289,12 @@ export function CoverPicker({ value, onChange, slots, onSlots, images = [], chec
           ) : null}
         </div>
       ) : null}
+      {!template && onCoverOnly ? (
+        <label className="md-yq-check md-yq-safe">
+          <input type="checkbox" checked={Boolean(coverOnly)} onChange={event => onCoverOnly(event.target.checked)} />
+          <span>{t('封面只放标题（正文从第 2 页起）')}</span>
+        </label>
+      ) : null}
       <label className="md-yq-check md-yq-safe">
         <input type="checkbox" checked={Boolean(safeArea)} onChange={event => onSafeArea(event.target.checked)} />
         <span>{t('显示安全区')}</span>
@@ -306,18 +333,34 @@ export function SizePicker({ ratio, tier, onRatio, onTier }) {
   )
 }
 
-/** 按几级标题分页（同言起「内容分割标题级别」）。 */
-export function PagingPicker({ value, onChange }) {
+/** 按几级标题分页（同言起「内容分割标题级别」）。默认按 ## 二级标题与 --- 分页；也可开启跨节紧凑连排。 */
+export function PagingPicker({ value, onChange, compactFlow = false, onCompactFlow }) {
   return (
-    <PanelGroup title={t('分页')} aside={t('每个小标题一张卡')}>
+    <PanelGroup title={t('分页')} aside={compactFlow ? t('仅 --- / 满页换卡') : t('每个小标题一张卡')}>
       <div className="md-yq-seg3" role="radiogroup" aria-label={t('按几级标题分页')}>
         {HEADING_LEVELS.map(level => (
-          <button key={level} type="button" role="radio" aria-checked={value === level} className={value === level ? 'is-on' : ''} onClick={() => onChange(level)}>
+          <button
+            key={level}
+            type="button"
+            role="radio"
+            aria-checked={!compactFlow && value === level}
+            className={!compactFlow && value === level ? 'is-on' : ''}
+            onClick={() => {
+              onChange(level)
+              if (compactFlow && onCompactFlow) onCompactFlow(false)
+            }}
+          >
             {'#'.repeat(level)} {t(['一级标题', '二级标题', '三级标题'][level - 1])}
           </button>
         ))}
       </div>
-      <p className="md-yq-hint">{t('小标题下面用 --- 还能手动分页，每页都带标题')}</p>
+      {onCompactFlow ? (
+        <label className="md-yq-check md-yq-safe">
+          <input type="checkbox" checked={Boolean(compactFlow)} onChange={event => onCompactFlow(event.target.checked)} />
+          <span>{t('跨节紧凑连排（忽略标题换页，仅按 --- 或满页换卡）')}</span>
+        </label>
+      ) : null}
+      <p className="md-yq-hint">{t('任意位置（含标题前后）写 --- 均可强制手动换页')}</p>
     </PanelGroup>
   )
 }
@@ -449,9 +492,10 @@ function shrinkAvatar(file) {
   })
 }
 
-/** 署名：头像、名字、账号、页脚文字。只存在这台设备上，默认都是空的。 */
-export function SignatureForm({ value, onChange, onError }) {
+/** 署名：头像、名字、账号、页脚文字。默认全空，支持自定义或从本机 Obsidian note-to-red 同步。 */
+export function SignatureForm({ value, onChange, onSync, onError }) {
   const fileRef = React.useRef(null)
+  const [syncing, setSyncing] = React.useState(false)
   const set = key => event => onChange({ ...value, [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value })
   const pick = async (event) => {
     const file = event.target.files?.[0]
@@ -463,6 +507,15 @@ export function SignatureForm({ value, onChange, onError }) {
       onError(err.message)
     }
   }
+  const runSync = async () => {
+    if (!onSync || syncing) return
+    setSyncing(true)
+    try {
+      await onSync()
+    } finally {
+      setSyncing(false)
+    }
+  }
   const field = (key, label, placeholder) => (
     <label className="md-yq-field">
       <span>{label}</span>
@@ -470,7 +523,7 @@ export function SignatureForm({ value, onChange, onError }) {
     </label>
   )
   return (
-    <details className="md-yq-group md-yq-sign">
+    <details className="md-yq-group md-yq-sign" open>
       <summary className="md-yq-group-head">
         <h3>{t('署名')}</h3>
         <span className="md-yq-group-aside">{value.name || t('未填写')}</span>
@@ -480,6 +533,12 @@ export function SignatureForm({ value, onChange, onError }) {
         <span className="md-yq-avatar">{value.avatar ? <img src={value.avatar} alt="" /> : <Icon name="user" size={18} />}</span>
         <button type="button" className="md-pill is-small" onClick={() => fileRef.current?.click()}>{value.avatar ? t('换头像') : t('上传头像')}</button>
         {value.avatar ? <button type="button" className="md-pill is-small" onClick={() => onChange({ ...value, avatar: '' })}>{t('移除')}</button> : null}
+        <button type="button" className="md-pill is-small" onClick={() => onChange({ ...DEFAULT_SIGNATURE })}>{t('清空署名')}</button>
+        {onSync ? (
+          <button type="button" className="md-pill is-small" disabled={syncing} title={t('从本机 Obsidian 的 note-to-red 插件同步头像、昵称、名言页脚与默认主题')} onClick={runSync}>
+            {syncing ? t('同步中…') : t('从 Obsidian 同步')}
+          </button>
+        ) : null}
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={pick} />
       </div>
       {field('name', t('名字'), t('印在页眉上'))}

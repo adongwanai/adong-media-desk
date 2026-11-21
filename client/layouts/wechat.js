@@ -3,7 +3,7 @@
 // 言起基于 Note to RED，Yeban8090，MIT，https://github.com/Yeban8090/note-to-red）。
 // 纯函数，不碰 DOM。所有文字先转义，模型输出里的 HTML 不会变成可执行的标签。
 import { dropLeadingTitle, parseBlocks } from './markdown.js'
-import { DEFAULT_FONT, DEFAULT_THEME, blockHtml, clampFontSize, css, cssValue, escapeHtml, fontFamily, headingHtml, pageBackground, richBlocks, yanqiTheme } from './yanqi.js'
+import { DEFAULT_FONT, DEFAULT_THEME, blockHtml, clampFontSize, css, cssValue, escapeHtml, extractLinkFootnotes, fontFamily, headingHtml, pageBackground, richBlocks, yanqiTheme } from './yanqi.js'
 
 export { escapeHtml }
 
@@ -15,10 +15,10 @@ export const DEFAULT_WECHAT_THEME = DEFAULT_THEME
 const H2 = { base: 'margin: 1.6em 0 0.8em; font-size: 1.32em; line-height: 1.4' }
 const H1 = { base: 'margin: 1.6em 0 0.8em; font-size: 1.45em; line-height: 1.4' }
 
-// 预览里能直接显示的图片：工作台自己的文件、data:image、http(s)
-const PREVIEWABLE = /^(media-desk\/(?:files\/[\w.-]+|imported\/[\w-]+\.[a-z0-9]{2,5})|data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+|https?:\/\/[^\s"'<>]+)$/i
-// 工作台自己的图片，和导入稿里引用的本地图片（media-desk/imported/…）
-const LOCAL = /^media-desk\/(?:files\/[\w.-]+|imported\/[\w-]+\.[a-z0-9]{2,5})$/i
+// 预览里能直接显示的图片：工作台自己的文件（含前导 /media-desk/…）、data:image、http(s)
+const PREVIEWABLE = /^(\/?media-desk\/(?:files\/[\w.-]+|imported\/[\w-]+\.[a-z0-9]{2,5})|data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+|https?:\/\/[^\s"'<>]+)$/i
+// 工作台自己的图片，和导入稿里引用的本地图片（/?media-desk/imported/…）
+const LOCAL = /^\/?media-desk\/(?:files\/[\w.-]+|imported\/[\w-]+\.[a-z0-9]{2,5})$/i
 const REMOTE = /^https?:\/\/[^\s"'<>]+$/i
 
 /** 配图放回对应小标题那一节的末尾，找不到就按顺序摊开，同成稿页。 */
@@ -79,14 +79,16 @@ export function wechatParts(markdown, themeId = DEFAULT_WECHAT_THEME, options = 
     lines: Boolean(options.lines),
     image,
   }
-  const rich = placeFigures(richBlocks(dropLeadingTitle(parseBlocks(markdown))), options.figures)
+  const baseRich = placeFigures(richBlocks(dropLeadingTitle(parseBlocks(markdown))), options.figures)
+  const footnoted = extractLinkFootnotes(baseRich)
+  const rich = options.linkFootnotes ? footnoted.blocks : baseRich
   const blocks = rich.map((block) => {
     const html = block.type === 'heading' && block.level <= 2 ? headingHtml(block.level, block.runs, ctx, { ...(block.level === 1 ? H1 : H2), line: block.line }) : blockHtml(block, ctx)
     return { html, line: block.line, type: block.type }
   })
   const color = cssValue(s.paragraph, 'color')
   const root = css(pageBackground(theme), 'padding: 20px 16px', 'border-radius: 4px', `font-family: ${font}`, `font-size: ${size}px`, 'line-height: 1.75', color && `color: ${color}`, 'letter-spacing: 0.3px', 'word-break: break-word', 'overflow-wrap: break-word', 'text-align: left')
-  return { root, blocks, missing }
+  return { root, blocks, missing, externalLinks: footnoted.count }
 }
 
 /**

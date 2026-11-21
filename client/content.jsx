@@ -6,7 +6,9 @@ import { plural, t, useLang } from './i18n.js'
 import { openQuickCapture } from './quick-capture.js'
 import { ImportFolderDialog, ImportedBadge } from './import-folder.jsx'
 import { Poster, initialOf, useProgressive } from './lazy.jsx'
-import { KIND_LABEL, STATUSES, STATUS_LABEL, displayItem, fmtWhen, isPiece, pieceCounts, pieceStatus, posterOf, relativeDay } from './util.js'
+import { markdownPlain } from './md-render.js'
+import { ScheduleWorkspace } from './schedule.jsx'
+import { KIND_LABEL, STATUSES, STATUS_LABEL, displayItem, fmtWhen, isPiece, pieceCounts, pieceStatus, posterOf, relativeDay, textLength } from './util.js'
 
 function useContentItems() {
   const items = useDesk(s => s.state.items)
@@ -26,6 +28,11 @@ const BoardCard = React.memo(function BoardCard({ item: raw }) {
   // 有成稿时显示成稿的标题和封面
   const item = displayItem(raw)
   const poster = posterOf(item)
+  const words = React.useMemo(() => {
+    const src = raw.production?.article || item.drafts?.article?.text || ''
+    return src ? textLength(markdownPlain(src)) : 0
+  }, [raw.production?.article, item.drafts?.article?.text])
+  const publishedCount = raw.publish ? Object.values(raw.publish).filter(v => v?.state === 'published').length : 0
   return (
     <button
       type="button"
@@ -44,6 +51,8 @@ const BoardCard = React.memo(function BoardCard({ item: raw }) {
       <strong title={item.title}>{item.title}</strong>
       <span className="md-board-meta">
         {item.platform ? <span>{t(item.platform)}</span> : null}
+        {words > 0 ? <span>{t('{n} 字', { n: words.toLocaleString() })}</span> : null}
+        {publishedCount > 0 ? <span className="is-pub-badge">{t('已发 {n}', { n: publishedCount })}</span> : null}
         {item.scheduledAt && item.status !== 'published' ? <span className="is-time">{relativeDay(item.scheduledAt)}</span> : null}
         {raw.production?.status === 'done' || item.drafts?.article ? <Icon name="pen" size={12} /> : null}
         {item.drafts?.script ? <Icon name="film" size={12} /> : null}
@@ -53,12 +62,12 @@ const BoardCard = React.memo(function BoardCard({ item: raw }) {
   )
 })
 
-function BoardColumn({ status, rows, over, setOver }) {
+function BoardColumn({ status, rows, over, setOver, collapsed, onToggleCollapse }) {
   const { limit, sentinel, more } = useProgressive(rows.length, COLUMN_PAGE)
   const left = rows.length - limit
   return (
     <section
-      className={`md-board-col ${over === status ? 'is-over' : ''}`}
+      className={`md-board-col ${over === status ? 'is-over' : ''} ${collapsed ? 'is-collapsed' : ''}`}
       aria-label={t(STATUS_LABEL[status])}
       onDragOver={(event) => {
         event.preventDefault()
@@ -74,16 +83,18 @@ function BoardColumn({ status, rows, over, setOver }) {
         if (id) dispatchOps([{ op: 'set_status', id, status }], { label: t('修改状态') })
       }}
     >
-      <header>
+      <header onClick={rows.length === 0 ? onToggleCollapse : undefined} style={rows.length === 0 ? { cursor: 'pointer' } : undefined} title={rows.length === 0 ? t('点击展开或收起空列') : undefined}>
         <span className={`md-dot status-${status}`} />
         <h3>{t(STATUS_LABEL[status])}</h3>
         <span className="md-board-count">{rows.length}</span>
       </header>
-      <div className="md-board-list">
-        {rows.slice(0, limit).map(item => <BoardCard key={item.id} item={item} />)}
-        {rows.length === 0 ? <p className="md-board-empty">{t('拖到这里')}</p> : null}
-        {left > 0 ? <button type="button" ref={sentinel} className="md-board-more" onClick={more}>{t('再显示 {n} 条', { n: Math.min(left, COLUMN_PAGE) })}</button> : null}
-      </div>
+      {collapsed ? null : (
+        <div className="md-board-list">
+          {rows.slice(0, limit).map(item => <BoardCard key={item.id} item={item} />)}
+          {rows.length === 0 ? <p className="md-board-empty">{t('拖到这里')}</p> : null}
+          {left > 0 ? <button type="button" ref={sentinel} className="md-board-more" onClick={more}>{t('再显示 {n} 条', { n: Math.min(left, COLUMN_PAGE) })}</button> : null}
+        </div>
+      )}
     </section>
   )
 }
@@ -110,6 +121,7 @@ function useEdges(ref) {
 
 function Board({ items }) {
   const [over, setOver] = React.useState(null)
+  const [expandedEmpty, setExpandedEmpty] = React.useState(() => new Set())
   const ref = React.useRef(null)
   const edges = useEdges(ref)
   // 一次分好五列，不在每列里各扫一遍
@@ -119,13 +131,20 @@ function Board({ items }) {
     for (const item of items) if (isPiece(item) && map[pieceStatus(item)]) map[pieceStatus(item)].push(item)
     return map
   }, [items])
-  // 空的列收窄，把地方让给有内容的列
-  const template = STATUSES.map(status => (columns[status].length ? 'minmax(168px, 1fr)' : 'minmax(112px, .55fr)')).join(' ')
+  // 空列默认收成紧凑窄条，把横向空间让给有上百条草稿的列；拖拽经过或点击标题时展开
+  const isCollapsed = status => columns[status].length === 0 && over !== status && !expandedEmpty.has(status)
+  const template = STATUSES.map(status => (columns[status].length ? 'minmax(180px, 1fr)' : isCollapsed(status) ? '68px' : 'minmax(120px, .55fr)')).join(' ')
+  const toggleEmpty = status => setExpandedEmpty((prev) => {
+    const next = new Set(prev)
+    if (next.has(status)) next.delete(status)
+    else next.add(status)
+    return next
+  })
   const scrollBy = dir => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.8, behavior: 'smooth' })
   return (
     <div className={`md-board-wrap ${edges.left ? 'can-left' : ''} ${edges.right ? 'can-right' : ''}`}>
       <div className="md-board" ref={ref} role="group" aria-label={t('看板')} style={{ gridTemplateColumns: template }}>
-        {STATUSES.map(status => <BoardColumn key={status} status={status} rows={columns[status]} over={over} setOver={setOver} />)}
+        {STATUSES.map(status => <BoardColumn key={status} status={status} rows={columns[status]} over={over} setOver={setOver} collapsed={isCollapsed(status)} onToggleCollapse={() => toggleEmpty(status)} />)}
       </div>
       {edges.left ? <button type="button" className="md-board-nudge is-left" aria-label={t('往左看')} title={t('往左看')} onClick={() => scrollBy(-1)}><Icon name="chevL" size={16} /></button> : null}
       {edges.right ? <button type="button" className="md-board-nudge is-right" aria-label={t('往右看更多列')} title={t('往右看更多列')} onClick={() => scrollBy(1)}><Icon name="chevR" size={16} /></button> : null}
@@ -219,17 +238,17 @@ export function ContentView() {
             <Icon name="search" size={15} />
             <input value={query} onChange={e => setDesk({ query: e.target.value })} placeholder={t('搜索标题、标签、平台')} aria-label={t('搜索内容')} />
           </label>
-          <Segmented label={t('显示方式')} value={mode} onChange={setMode} options={[{ value: 'board', label: t('看板') }, { value: 'table', label: t('表格') }]} />
+          <Segmented label={t('显示方式')} value={mode} onChange={setMode} options={[{ value: 'board', label: t('看板') }, { value: 'table', label: t('表格') }, { value: 'calendar', label: t('日历') }]} />
           <button type="button" className="md-btn" onClick={() => setImporting(true)}><Icon name="folder" size={14} />{t('导入文件夹')}</button>
         </div>
       </header>
-      {items.length === 0 ? (
+      {items.length === 0 && mode !== 'calendar' ? (
         <Empty
           title={query ? t('没有匹配的内容') : t('还没有内容')}
           hint={query ? t('换个关键词试试。') : t('记下第一条灵感，它就会出现在这里，之后可以一键成稿。稿子已经写在 Markdown 文件里（比如 Obsidian）？点「导入文件夹」一次读进来。')}
           action={<div className="md-empty-actions">{query ? <button type="button" className="md-btn" onClick={() => setDesk({ query: '' })}>{t('清空搜索')}</button> : <><button type="button" className="md-btn is-primary" onClick={openQuickCapture}><Icon name="plus" size={14} />{t('记一条灵感')}</button><button type="button" className="md-btn" onClick={() => setImporting(true)}><Icon name="folder" size={14} />{t('导入文件夹')}</button></>}</div>}
         />
-      ) : mode === 'board' ? <Board items={items} /> : <Table items={items} />}
+      ) : mode === 'calendar' ? <ScheduleWorkspace items={all} /> : mode === 'board' ? <Board items={items} /> : <Table items={items} />}
       {importing ? <ImportFolderDialog onClose={() => setImporting(false)} /> : null}
     </div>
   )

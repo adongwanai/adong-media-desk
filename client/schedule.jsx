@@ -253,15 +253,21 @@ function Rail({ items }) {
   )
 }
 
+export function ScheduleWorkspace({ items }) {
+  return (
+    <div className="md-schedule">
+      <Calendar items={items} />
+      <Rail items={items} />
+    </div>
+  )
+}
+
 export function ScheduleView() {
   useLang()
   const items = useDesk(s => s.state.items)
   return (
     <div className="md-board-page md-sched-page">
-      <div className="md-schedule">
-        <Calendar items={items} />
-        <Rail items={items} />
-      </div>
+      <ScheduleWorkspace items={items} />
     </div>
   )
 }

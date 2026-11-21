@@ -30,18 +30,18 @@ function coverOf(list) {
   return list.find(item => posterOf(item)) ?? list[0]
 }
 
-export function Stamp({ list, today, onOpen, label }) {
+export function Stamp({ list, today, day, onOpen, label }) {
   if (!list?.length) {
     return (
-      <button type="button" className={`md-stamp is-blank ${today ? 'is-today' : ''}`} aria-label={today ? t('今天还没有记录，记一条') : t('{label} 没有记录', { label })} onClick={today ? () => openCapture('text') : undefined} disabled={!today}>
-        {today ? <Icon name="plus" size={16} /> : null}
+      <button type="button" className={`md-stamp is-blank ${today ? 'is-today' : ''}`} title={today ? t('{label} · 今天还没有记录，点一下记一条', { label }) : t('{label} · 无记录', { label })} aria-label={today ? t('今天还没有记录，记一条') : t('{label} 没有记录', { label })} onClick={today ? () => openCapture('text') : undefined} disabled={!today}>
+        {today ? <Icon name="plus" size={16} /> : day ? <small className="md-stamp-day">{day}</small> : null}
       </button>
     )
   }
   const cover = coverOf(list)
   const poster = posterOf(cover)
   return (
-    <button type="button" className={`md-stamp ${poster ? '' : `is-type tone-${hash(cover.id) % 6}`}`} aria-label={t('{label}：{title}，共 {n} 条', { label, title: cover.title, n: list.length })} title={cover.title} onClick={onOpen}>
+    <button type="button" className={`md-stamp ${poster ? '' : `is-type tone-${hash(cover.id) % 6}`}`} aria-label={t('{label}：{title}，共 {n} 条', { label, title: cover.title, n: list.length })} title={t('{label}（{n} 条）：{title}', { label, n: list.length, title: cover.title })} onClick={onOpen}>
       {poster ? <img src={poster} alt="" loading="lazy" draggable={false} /> : <span>{initialOf(cover.title)}</span>}
       {list.length > 1 ? <i>{list.length}</i> : null}
     </button>
@@ -61,12 +61,12 @@ export function MiniStamps() {
     cells.push(d)
   }
   return (
-    <div className="md-ministamps">
+    <div className="md-ministamps" aria-label={t('近 10 天灵感邮票')}>
       <div className="md-ministamps-row">
         {cells.map((d) => {
           const key = dayKey(d)
           const list = days.get(key)
-          return <Stamp key={key} list={list} today={key === dayKey(now)} label={t('{m}月{d}日', { m: d.getMonth() + 1, d: d.getDate(), mon: d.toLocaleString('en-US', { month: 'short' }) })} onOpen={() => openItem(coverOf(list).id)} />
+          return <Stamp key={key} list={list} today={key === dayKey(now)} day={d.getDate()} label={t('{m}月{d}日', { m: d.getMonth() + 1, d: d.getDate(), mon: d.toLocaleString('en-US', { month: 'short' }) })} onOpen={() => openItem(coverOf(list).id)} />
         })}
       </div>
       <button type="button" className="md-ministamps-more" onClick={() => setDesk({ view: 'schedule' })} title={t('打开灵感日历')} aria-label={t('打开灵感日历，已连续记录 {n} 天', { n: streak })}><Icon name="upRight" size={14} /></button>

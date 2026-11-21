@@ -1,26 +1,36 @@
-// 预览卡片上的图片和表格调整，同言起 setupImageZoom / setupTableResize：
-// 图片：拖图片本体 = 平移；右上角 − / + = 缩放（再加一个滑杆、Ctrl/⌘ + 滚轮和触控板双指捏合）；四角拖拽 = 改大小；↺ = 复位。
+// 预览卡片上的图片和表格调整，对齐言起 setupImageZoom / setupTableResize 并补齐四边拉缩与无裁剪等比缩放：
+// 图片：按住图片内部拖动 = 全景平移（x/y）；四角拖拽 = 等比整体放大/缩小（不自动裁剪）；上下左右四边拖拽 = 上下拉缩高度 / 左右拉缩宽度；
+// 右上角 − / 滑杆 / +（及 Ctrl/⌘ + 滚轮、双指捏合）= 框内画面缩放（50%–300%）；↺ = 复位。
 // 表格：右上角 − / + / ↺ 调字号缩放，右下角拖拽缩放。
-// 这些控件只加在预览的 shadow root 里，导出用的卡片 HTML 里没有它们。拖动中直接改样式，松手才记下来（重新排版）。
-// 卡片在预览里按比例缩小显示，所以屏幕上的位移要除以缩放比，控件尺寸要乘回来，看起来才和言起一样大。
+import { coverImageBox } from './yanqi.js'
+
+export { coverImageBox }
 
 export const CONTROL_CSS = `
 [data-img]{cursor:grab;touch-action:none}
 [data-img].is-dragging{cursor:grabbing}
-[data-img] img{transition:transform .18s cubic-bezier(.2,.8,.2,1)}
+[data-img] img{cursor:grab;transition:transform .18s cubic-bezier(.2,.8,.2,1)}
+[data-img].is-dragging img{cursor:grabbing}
 [data-img].is-dragging img,[data-img].is-live img{transition:none}
-.mdx-ctrl{position:absolute;top:calc(6px * var(--inv));right:calc(6px * var(--inv));display:flex;align-items:center;gap:calc(4px * var(--inv));opacity:0;transition:opacity .15s ease;z-index:4;line-height:1}
-.mdx-btn{width:calc(24px * var(--inv));height:calc(24px * var(--inv));padding:0;border:none;border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.62);color:#fff;font:600 calc(15px * var(--inv))/1 system-ui,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.mdx-btn:hover{background:rgba(0,0,0,.82)}
-.mdx-range{width:calc(76px * var(--inv));height:calc(24px * var(--inv));margin:0;padding:0 calc(6px * var(--inv));border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.62);accent-color:#fff;cursor:pointer}
-.mdx-pct{min-width:calc(34px * var(--inv));height:calc(24px * var(--inv));padding:0 calc(4px * var(--inv));border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.62);color:#fff;font:600 calc(11px * var(--inv))/calc(24px * var(--inv)) system-ui,sans-serif;text-align:center;font-variant-numeric:tabular-nums}
-.mdx-corner{position:absolute;width:calc(16px * var(--inv));height:calc(16px * var(--inv));background:rgba(0,0,0,.55);border:calc(2px * var(--inv)) solid rgba(255,255,255,.92);border-radius:calc(3px * var(--inv));opacity:0;transition:opacity .15s ease;z-index:5;touch-action:none;box-sizing:border-box}
-.mdx-corner:hover{background:rgba(0,0,0,.8)}
-.mdx-nw{top:calc(5px * var(--inv));left:calc(5px * var(--inv));cursor:nwse-resize}
-.mdx-ne{top:calc(5px * var(--inv));right:calc(5px * var(--inv));cursor:nesw-resize}
-.mdx-sw{bottom:calc(5px * var(--inv));left:calc(5px * var(--inv));cursor:nesw-resize}
-.mdx-se{bottom:calc(5px * var(--inv));right:calc(5px * var(--inv));cursor:nwse-resize}
-[data-img]:hover .mdx-ctrl,[data-img]:hover .mdx-corner,[data-img]:focus-within .mdx-ctrl,[data-img].is-live .mdx-ctrl,[data-img].is-live .mdx-corner{opacity:1}
+.mdx-ctrl{position:absolute;top:calc(18px * var(--inv));right:calc(18px * var(--inv));display:flex;align-items:center;gap:calc(4px * var(--inv));opacity:0;transition:opacity .15s ease;z-index:6;line-height:1}
+.mdx-btn{width:calc(24px * var(--inv));height:calc(24px * var(--inv));padding:0;border:none;border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.66);color:#fff;font:600 calc(15px * var(--inv))/1 system-ui,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mdx-btn:hover{background:rgba(0,0,0,.86)}
+.mdx-range{width:calc(72px * var(--inv));height:calc(24px * var(--inv));margin:0;padding:0 calc(6px * var(--inv));border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.66);accent-color:#fff;cursor:pointer}
+.mdx-pct{min-width:calc(34px * var(--inv));height:calc(24px * var(--inv));padding:0 calc(4px * var(--inv));border-radius:calc(6px * var(--inv));background:rgba(0,0,0,.66);color:#fff;font:600 calc(11px * var(--inv))/calc(24px * var(--inv)) system-ui,sans-serif;text-align:center;font-variant-numeric:tabular-nums}
+.mdx-corner,.mdx-edge{position:absolute;background:rgba(0,0,0,.64);border:calc(2px * var(--inv)) solid rgba(255,255,255,.95);box-shadow:0 calc(1px * var(--inv)) calc(4px * var(--inv)) rgba(0,0,0,.35);opacity:0;transition:opacity .15s ease;z-index:7;touch-action:none;box-sizing:border-box}
+.mdx-corner::before,.mdx-edge::before{content:"";position:absolute;inset:calc(-6px * var(--inv))}
+.mdx-corner{width:calc(14px * var(--inv));height:calc(14px * var(--inv));border-radius:calc(3px * var(--inv))}
+.mdx-edge{border-radius:calc(999px * var(--inv))}
+.mdx-corner:hover,.mdx-edge:hover{background:#0066ff}
+.mdx-nw{top:calc(3px * var(--inv));left:calc(3px * var(--inv));cursor:nwse-resize}
+.mdx-ne{top:calc(3px * var(--inv));right:calc(3px * var(--inv));cursor:nesw-resize}
+.mdx-sw{bottom:calc(3px * var(--inv));left:calc(3px * var(--inv));cursor:nesw-resize}
+.mdx-se{bottom:calc(3px * var(--inv));right:calc(3px * var(--inv));cursor:nwse-resize}
+.mdx-n{top:calc(3px * var(--inv));left:50%;transform:translateX(-50%);width:calc(34px * var(--inv));height:calc(9px * var(--inv));cursor:ns-resize}
+.mdx-s{bottom:calc(3px * var(--inv));left:50%;transform:translateX(-50%);width:calc(34px * var(--inv));height:calc(9px * var(--inv));cursor:ns-resize}
+.mdx-w{left:calc(3px * var(--inv));top:50%;transform:translateY(-50%);width:calc(9px * var(--inv));height:calc(34px * var(--inv));cursor:ew-resize}
+.mdx-e{right:calc(3px * var(--inv));top:50%;transform:translateY(-50%);width:calc(9px * var(--inv));height:calc(34px * var(--inv));cursor:ew-resize}
+[data-img]:hover .mdx-ctrl,[data-img]:hover .mdx-corner,[data-img]:hover .mdx-edge,[data-img]:focus-within .mdx-ctrl,[data-img].is-live .mdx-ctrl,[data-img].is-live .mdx-corner,[data-img].is-live .mdx-edge{opacity:1}
 [data-img].is-snap{box-shadow:0 0 0 calc(2px * var(--inv)) #3b82f6 !important}
 .mdx-twrap{position:relative}
 .mdx-tctrl{position:absolute;top:calc(4px * var(--inv));right:calc(4px * var(--inv));display:flex;gap:calc(3px * var(--inv));opacity:0;transition:opacity .15s ease;z-index:6}
@@ -56,6 +66,23 @@ export function imageMaxHeight({ room, margin = 0, limit = Infinity, current = 0
   const fit = Math.floor(room - margin) - 1
   // 原来就比这页还高（一页只有这张图、硬放进来的）：不让再往大拉，但也不在一按下时就把它压小
   return Math.max(IMAGE.min, Math.min(limit, Math.max(fit, Math.min(current, limit))))
+}
+
+/**
+ * 正文图片等比无裁剪缩放计算：严格锁定原图宽高比 natural，在卡片正文宽 maxW 与当页可用高 maxH 内等比缩放整个图片框，绝不裁切图片边缘。
+ */
+export function proportionalImageBox({ targetW, natural = 4 / 3, maxW = 410, maxH = 480, minPx = IMAGE.min }) {
+  const ratio = Number.isFinite(natural) && natural > 0 ? natural : 4 / 3
+  const fitMaxW = Math.max(minPx, Math.min(maxW, maxH * ratio))
+  const fitMinW = Math.min(fitMaxW, Math.max(minPx, minPx * ratio))
+  const clampedW = Math.max(fitMinW, Math.min(fitMaxW, targetW))
+  const clampedH = clampedW / ratio
+  return {
+    w: Math.round(clampedW * 10) / 10,
+    h: Math.max(minPx, Math.round(clampedH * 10) / 10),
+    hitLimit: targetW > fitMaxW + 0.5,
+    maxW: fitMaxW,
+  }
 }
 
 /**
@@ -122,7 +149,12 @@ export function attachControls(root, options) {
     if (!img) continue
     const fixed = frame.hasAttribute('data-fixed')
     const st = { s: 1, x: 0, y: 0, ...(options.images[key] ?? {}) }
-    const natural = Number(img.getAttribute('width')) / Number(img.getAttribute('height')) || img.naturalWidth / img.naturalHeight || 4 / 3
+    const natural = Number(frame.getAttribute('data-aspect'))
+      || Number(img.getAttribute('width')) / Number(img.getAttribute('height'))
+      || img.naturalWidth / img.naturalHeight
+      || 4 / 3
+    const baseW = Number(frame.getAttribute('data-base-w')) || frame.offsetWidth || 240
+    const baseH = Number(frame.getAttribute('data-base-h')) || Math.round((baseW / natural) * 10) / 10
     const pct = document.createElement('span')
     pct.className = 'mdx-pct'
     const range = document.createElement('input')
@@ -133,12 +165,28 @@ export function attachControls(root, options) {
     range.step = '0.05'
     range.setAttribute('aria-label', L.zoom)
     range.addEventListener('pointerdown', event => event.stopPropagation())
-    // 平移不能把图拖得完全离开框：最多拖出去八成
+
+    const currentFrameSize = () => {
+      if (fixed) {
+        return {
+          fw: frame.clientWidth || parseFloat(frame.style.width) || 240,
+          fh: frame.clientHeight || parseFloat(frame.style.height) || 180,
+        }
+      }
+      return {
+        fw: st.w ?? baseW,
+        fh: st.h ?? baseH,
+      }
+    }
+
+    // 平移限制：基于完整未裁切位图尺寸 (geom.imgW × geom.imgH)，保证上下/左右拉缩或缩放后都能在框内拖到任意边缘不露白边
     const clampPan = () => {
-      const w = frame.clientWidth * st.s
-      const h = frame.clientHeight * st.s
-      st.x = Math.round(Math.max(-w * 0.8, Math.min(w * 0.8, st.x)) * 10) / 10
-      st.y = Math.round(Math.max(-h * 0.8, Math.min(h * 0.8, st.y)) * 10) / 10
+      const { fw, fh } = currentFrameSize()
+      const geom = coverImageBox(fw, fh, natural)
+      const w = Math.max(fw, geom.imgW) * Math.max(1, st.s)
+      const h = Math.max(fh, geom.imgH) * Math.max(1, st.s)
+      st.x = Math.round(Math.max(-w * 0.85, Math.min(w * 0.85, st.x)) * 10) / 10
+      st.y = Math.round(Math.max(-h * 0.85, Math.min(h * 0.85, st.y)) * 10) / 10
     }
     const applyT = () => {
       img.style.transform = `translate(${st.x}px, ${st.y}px) scale(${st.s})`
@@ -146,34 +194,56 @@ export function attachControls(root, options) {
       range.value = String(st.s)
     }
     const applyH = () => {
-      if (fixed) return
-      if (typeof st.w === 'number') frame.style.width = `${st.w}px`
-      if (typeof st.h === 'number') frame.style.height = `${st.h}px`
+      const { fw, fh } = currentFrameSize()
+      if (!fixed) {
+        frame.style.width = `${fw}px`
+        frame.style.height = `${fh}px`
+      }
+      const geom = coverImageBox(fw, fh, natural)
+      img.style.left = `${geom.left}px`
+      img.style.top = `${geom.top}px`
+      img.style.width = `${geom.imgW}px`
+      img.style.height = `${geom.imgH}px`
     }
     const save = () => options.onImage(key, { ...st })
-    const zoomTo = (value) => {
+
+    // 右上角 − / 滑杆 / + 与 Ctrl/⌘+滚轮：统一控制框内画面缩放 st.s（同言起 setupImageZoom），配合按住图片内部平移聚焦细节
+    const zoomInner = (value) => {
       st.s = Math.min(IMAGE.scaleMax, Math.max(IMAGE.scaleMin, Math.round(value * 100) / 100))
       clampPan()
       applyT()
     }
+
+    applyH()
     applyT()
-    range.addEventListener('input', () => { frame.classList.add('is-live'); zoomTo(Number(range.value)) })
+    range.addEventListener('input', () => { frame.classList.add('is-live'); zoomInner(Number(range.value)) })
     range.addEventListener('change', () => { frame.classList.remove('is-live'); save() })
 
     const ctrl = document.createElement('div')
     ctrl.className = 'mdx-ctrl'
     ctrl.append(
-      button('−', L.zoomOut, () => { zoomTo(st.s - IMAGE.step); save() }),
+      button('−', L.zoomOut, () => { zoomInner(st.s - IMAGE.step); save() }),
       range,
       pct,
-      button('+', L.zoomIn, () => { zoomTo(st.s + IMAGE.step); save() }),
-      button('↺', L.reset, () => { st.s = 1; st.x = 0; st.y = 0; delete st.w; delete st.h; applyT(); options.onImageReset(key) }),
+      button('+', L.zoomIn, () => { zoomInner(st.s + IMAGE.step); save() }),
+      button('↺', L.reset, () => {
+        st.s = 1
+        st.x = 0
+        st.y = 0
+        delete st.w
+        delete st.h
+        frame.classList.remove('is-limit', 'is-snap')
+        applyH()
+        applyT()
+        options.onImageReset(key)
+      }),
     )
     frame.appendChild(ctrl)
     img.title = L.imageHint
 
-    // 平移
+    // 图片内部按住直接自由拖动画面（平移 st.x / st.y，同言起 setupImageZoom）
     let drag = null
+    let suppressClick = false
     img.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return
       drag = { sx: event.clientX, sy: event.clientY, ox: st.x, oy: st.y, moved: false }
@@ -196,26 +266,37 @@ export function attachControls(root, options) {
       drag = null
       frame.classList.remove('is-dragging')
       try { img.releasePointerCapture(event.pointerId) } catch { /* 已经释放 */ }
-      if (moved) save()
+      if (moved) {
+        suppressClick = true
+        save()
+      }
     }
     img.addEventListener('pointerup', endDrag)
     img.addEventListener('pointercancel', endDrag)
-    img.addEventListener('click', event => event.stopPropagation())
+    img.addEventListener('click', (event) => {
+      if (suppressClick) {
+        suppressClick = false
+        stop(event)
+        return
+      }
+      event.stopPropagation()
+    })
 
-    // Ctrl / ⌘ + 滚轮，触控板捏合（浏览器会带上 ctrlKey）
+    // Ctrl / ⌘ + 滚轮，触控板捏合：框内画面缩放
     let wheelTimer = null
     frame.addEventListener('wheel', (event) => {
       if (!event.ctrlKey && !event.metaKey) return
       stop(event)
       frame.classList.add('is-live')
-      zoomTo(st.s * Math.exp(-event.deltaY * 0.0025))
+      zoomInner(st.s * Math.exp(-event.deltaY * 0.0025))
       clearTimeout(wheelTimer)
       wheelTimer = setTimeout(() => { frame.classList.remove('is-live'); save() }, 260)
     }, { passive: false })
 
     if (fixed) continue
     frame.appendChild(limitBadge(L.pageLimit))
-    // 四角改大小：横向按中心对称（同言起 ×2），纵向单边；不超过正文区，也不超过这一页剩下的高度（见 imageMaxHeight）
+
+    // 1. 四角拖拽（↖ ↗ ↙ ↘）：等比整体放大/缩小（保持当前框或原图比例，绝不自动裁切边缘）
     for (const [cls, hx, vy] of [['mdx-nw', -1, -1], ['mdx-ne', 1, -1], ['mdx-sw', -1, 1], ['mdx-se', 1, 1]]) {
       const handle = document.createElement('div')
       handle.className = `mdx-corner ${cls}`
@@ -223,9 +304,12 @@ export function attachControls(root, options) {
       frame.appendChild(handle)
       let rz = null
       handle.addEventListener('pointerdown', (event) => {
+        const w0 = st.w ?? frame.offsetWidth
         const h0 = st.h ?? frame.offsetHeight
-        const maxH = imageMaxHeight({ room: roomBelow(frame, 'top'), margin: marginBelow(frame), limit: options.body.height - 24, current: h0 })
-        rz = { sx: event.clientX, sy: event.clientY, w0: st.w ?? frame.offsetWidth, h0, maxW: options.body.width, maxH }
+        const cardMaxH = Math.max(IMAGE.min, options.body.height - 24)
+        const fitPageH = imageMaxHeight({ room: roomBelow(frame, 'top'), margin: marginBelow(frame), limit: cardMaxH, current: h0 })
+        const ratio0 = w0 > 0 && h0 > 0 && Math.abs(w0 / h0 - natural) >= 0.03 ? w0 / h0 : natural
+        rz = { sx: event.clientX, sy: event.clientY, w0, h0, ratio0, maxW: options.body.width, fitPageH, cardMaxH }
         frame.classList.add('is-live')
         try { handle.setPointerCapture(event.pointerId) } catch { /* 拿不到捕获也能拖 */ }
         stop(event)
@@ -233,18 +317,28 @@ export function attachControls(root, options) {
       handle.addEventListener('pointermove', (event) => {
         if (!rz) return
         const k = inv()
-        let w = Math.max(IMAGE.min, Math.min(rz.maxW, rz.w0 + hx * (event.clientX - rz.sx) * 2 * k))
-        const want = rz.h0 + vy * (event.clientY - rz.sy) * k
-        let h = Math.max(IMAGE.min, Math.min(rz.maxH, want))
-        // 顶到这页底了：亮一圈橙色并提示，让人知道不是没拖动
-        frame.classList.toggle('is-limit', want > rz.maxH + 0.5)
+        const dx = hx * (event.clientX - rz.sx) * 2 * k
+        const dy = vy * (event.clientY - rz.sy) * k * rz.ratio0
+        const deltaW = Math.abs(dx) >= Math.abs(dy) ? dx : dy
+        let wantW = rz.w0 + deltaW
         let snapped = false
-        if (rz.maxW - w < SNAP) { w = rz.maxW; snapped = true }
-        if (Math.abs(h - w / natural) < SNAP && w / natural <= rz.maxH) { h = w / natural; snapped = true }
-        frame.classList.toggle('is-snap', snapped)
-        st.w = Math.round(w)
-        st.h = Math.round(h)
+        const fitPageW = rz.fitPageH * rz.ratio0
+        if (Math.abs(rz.maxW - wantW) < SNAP) { wantW = rz.maxW; snapped = true }
+        else if (Math.abs(baseW - wantW) < SNAP) { wantW = baseW; snapped = true }
+        else if (Math.abs(fitPageW - wantW) < SNAP) { wantW = fitPageW; snapped = true }
+        const box = proportionalImageBox({
+          targetW: wantW,
+          natural: rz.ratio0,
+          maxW: rz.maxW,
+          maxH: rz.cardMaxH,
+        })
+        frame.classList.toggle('is-limit', box.hitLimit)
+        frame.classList.toggle('is-snap', snapped && !box.hitLimit)
+        st.w = box.w
+        st.h = box.h
+        clampPan()
         applyH()
+        applyT()
       })
       const end = (event) => {
         if (!rz) return
@@ -256,6 +350,65 @@ export function attachControls(root, options) {
       handle.addEventListener('pointerup', end)
       handle.addEventListener('pointercancel', end)
       handle.addEventListener('click', event => event.stopPropagation())
+    }
+
+    // 2. 四边中点拖拽（↑ ↓ 上下拉缩高度 / ← → 左右拉缩宽度）：独立调整宽或高，配合框内自由拖动定位取景
+    for (const [cls, hx, vy] of [['mdx-n', 0, -1], ['mdx-s', 0, 1], ['mdx-w', -1, 0], ['mdx-e', 1, 0]]) {
+      const edge = document.createElement('div')
+      edge.className = `mdx-edge ${cls}`
+      edge.title = hx !== 0 ? (L.resizeWidth || L.resize) : (L.resizeHeight || L.resize)
+      frame.appendChild(edge)
+      let rz = null
+      edge.addEventListener('pointerdown', (event) => {
+        const w0 = st.w ?? frame.offsetWidth
+        const h0 = st.h ?? frame.offsetHeight
+        const cardMaxH = Math.max(IMAGE.min, options.body.height - 24)
+        const fitPageH = imageMaxHeight({ room: roomBelow(frame, 'top'), margin: marginBelow(frame), limit: cardMaxH, current: h0 })
+        rz = { sx: event.clientX, sy: event.clientY, w0, h0, maxW: options.body.width, fitPageH, cardMaxH }
+        frame.classList.add('is-live')
+        try { edge.setPointerCapture(event.pointerId) } catch { /* 拿不到捕获也能拖 */ }
+        stop(event)
+      })
+      edge.addEventListener('pointermove', (event) => {
+        if (!rz) return
+        const k = inv()
+        let snapped = false
+        let hitLimit = false
+        if (hx !== 0) {
+          // 左右拉缩：横向居中对称调整宽度，高度保持不变
+          const wantW = rz.w0 + hx * (event.clientX - rz.sx) * 2 * k
+          hitLimit = wantW > rz.maxW + 0.5
+          let w = Math.max(IMAGE.min, Math.min(rz.maxW, wantW))
+          if (Math.abs(rz.maxW - w) < SNAP) { w = rz.maxW; snapped = true }
+          else if (Math.abs((rz.h0 * natural) - w) < SNAP && rz.h0 * natural <= rz.maxW) { w = rz.h0 * natural; snapped = true }
+          st.w = Math.round(w * 10) / 10
+          st.h = Math.round(rz.h0 * 10) / 10
+        } else {
+          // 上下拉缩：独立调整高度，宽度保持不变
+          const wantH = rz.h0 + vy * (event.clientY - rz.sy) * k
+          hitLimit = wantH > rz.cardMaxH + 0.5
+          let h = Math.max(IMAGE.min, Math.min(rz.cardMaxH, wantH))
+          if (Math.abs((rz.w0 / natural) - h) < SNAP && rz.w0 / natural <= rz.cardMaxH) { h = rz.w0 / natural; snapped = true }
+          else if (Math.abs(rz.fitPageH - h) < SNAP) { h = rz.fitPageH; snapped = true }
+          st.w = Math.round(rz.w0 * 10) / 10
+          st.h = Math.round(h * 10) / 10
+        }
+        frame.classList.toggle('is-limit', hitLimit)
+        frame.classList.toggle('is-snap', snapped && !hitLimit)
+        clampPan()
+        applyH()
+        applyT()
+      })
+      const end = (event) => {
+        if (!rz) return
+        rz = null
+        frame.classList.remove('is-live', 'is-snap', 'is-limit')
+        try { edge.releasePointerCapture(event.pointerId) } catch { /* 已经释放 */ }
+        save()
+      }
+      edge.addEventListener('pointerup', end)
+      edge.addEventListener('pointercancel', end)
+      edge.addEventListener('click', event => event.stopPropagation())
     }
   }
 

@@ -11,6 +11,8 @@ const TABLE_RULE = /^\s*\|(\s*:?-+:?\s*\|)+\s*$/
 const QUOTE = /^\s{0,3}>/
 const IMAGE_LINE = /^\s*!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?(?:\s+["'][^"'\n]*["'])?\s*\)\s*$/
 const TASK = /^\[([ xX])\]\s+/
+const CALLOUT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|INFO|SUCCESS|QUESTION|EXAMPLE)\][+-]?(?:\s+(.*))?$/i
+const CALLOUT_TITLE = { note: '说明', info: '信息', tip: '技巧', success: '结论', important: '重点', example: '示例', warning: '注意', question: '思考', caution: '警惕' }
 const MAX_DEPTH = 4
 
 export function escapeHtml(text) {
@@ -196,7 +198,19 @@ function renderBlocks(lines, opts, depth) {
         quote.push(lines[i].replace(/^\s{0,3}>\s?/, ''))
         i += 1
       }
-      out.push(depth >= MAX_DEPTH ? `<blockquote><p>${quote.map(row => renderInline(row, opts, depth)).join('<br>')}</p></blockquote>` : `<blockquote>${renderBlocks(quote, opts, depth + 1)}</blockquote>`)
+      const firstNonEmpty = quote.findIndex(row => row.trim())
+      const alert = firstNonEmpty >= 0 ? CALLOUT.exec(quote[firstNonEmpty].trim()) : null
+      if (alert) {
+        const kind = alert[1].toLowerCase()
+        const title = (alert[2] ?? '').trim() || CALLOUT_TITLE[kind] || '提示'
+        const restLines = quote.slice(firstNonEmpty + 1)
+        const inner = restLines.some(row => row.trim())
+          ? (depth >= MAX_DEPTH ? `<p>${restLines.map(row => renderInline(row, opts, depth)).join('<br>')}</p>` : renderBlocks(restLines, opts, depth + 1))
+          : ''
+        out.push(`<blockquote class="md-callout is-${escapeHtml(kind)}"><p class="md-callout-title"><strong>${renderInline(title, opts, depth)}</strong></p>${inner}</blockquote>`)
+      } else {
+        out.push(depth >= MAX_DEPTH ? `<blockquote><p>${quote.map(row => renderInline(row, opts, depth)).join('<br>')}</p></blockquote>` : `<blockquote>${renderBlocks(quote, opts, depth + 1)}</blockquote>`)
+      }
       continue
     }
     if (TABLE_ROW.test(line) && TABLE_RULE.test(lines[i + 1] ?? '')) {

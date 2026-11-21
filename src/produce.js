@@ -1,6 +1,7 @@
 // 一键成稿流水线：文章 → 标题与画面规划 → 封面、配图、分镜。
 // 任务在 Host 里跑，关掉页面也不会中断；每生成一张图就落盘一次。
-import { CREATION_GOALS, creationFormat } from './creation.js'
+import { cleanCreation, CREATION_GOALS, creationFormat } from './creation.js'
+import { auditDraftQuality, autoAnnotateHighlights, normalizeDraftStructure } from './draft-quality.js'
 import { writeFile } from 'node:fs/promises'
 import { articleIncomplete, cleanRewrite, continuePrompts, humanizePrompts, relatedPast, rewriteProblem } from './workflow.js'
 import { activeStyle, styleToVoice } from './style.js'
@@ -236,7 +237,7 @@ export class Producer {
     }, { undoable: false })
   }
 
-  async start(id, { withImages, goal } = {}) {
+  async start(id, { withImages, goal, mode, audience, thesis, creation } = {}) {
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
     const item = state.items.find(row => row.id === id)
@@ -248,7 +249,14 @@ export class Producer {
     this.jobs.set(id, job)
     await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
-      if (CREATION_GOALS.includes(goal)) target.creation = { goal }
+      const patch = {
+        ...(creation && typeof creation === 'object' ? creation : {}),
+        ...(CREATION_GOALS.includes(goal) ? { goal } : {}),
+        ...(mode !== undefined ? { mode } : {}),
+        ...(audience !== undefined ? { audience } : {}),
+        ...(thesis !== undefined ? { thesis } : {}),
+      }
+      if (Object.keys(patch).length) target.creation = cleanCreation(patch, target.creation)
       // 重新成稿只换稿子；已经录好的视频是真实拍下来的，留着
       target.production = { status: 'running', stage: 'brief', withImages: draw, startedAt: new Date().toISOString(), format: draftFormat(creationFormat(target, draft.draftFormat)), direct: target.creation?.goal === 'xhs', title: target.title, article: '', cover: null, images: [], shots: [], ...(target.production?.takes?.length ? { takes: target.production.takes } : {}) }
       return draft
@@ -390,6 +398,16 @@ export class Producer {
         // 署名是作者自己填的：模型漏写时补在最后一行，不靠模型每次都记得
         const signature = String(snapshot.author?.signature ?? '').trim()
         if (signature && !article.includes(signature)) article = `${article.replace(/\s+$/, '')}\n\n${signature}`
+        const produceGoal = item?.creation?.goal || (format === 'script' ? 'script' : 'article')
+        if (produceGoal === 'xhs' || /^##\s+/m.test(article)) {
+          const normalized = normalizeDraftStructure(article, { fallbackTitle: written.title || plan.title, goal: produceGoal })
+          if (normalized.changed) article = normalized.body
+        }
+        if (produceGoal === 'xhs') {
+          const annotated = autoAnnotateHighlights(article, { goal: produceGoal })
+          if (annotated.changed) article = annotated.text
+        }
+        const qualityAudit = auditDraftQuality(article, { title: written.title || plan.title, goal: produceGoal, style: activeStyle(snapshot) })
         job.step = 'done'
         job.text = article
         // 写成亲手做过、但灵感、素材和工作流里都找不到对应经历的句子，标出来给作者看
@@ -409,6 +427,7 @@ export class Producer {
           if (direct) production.title = written.title
           production.article = article
           production.aiArticle = article
+          production.quality = { ok: qualityAudit.ok, passCount: qualityAudit.passCount, totalChecks: qualityAudit.totalChecks, checks: qualityAudit.checks, checkedAt: new Date().toISOString() }
           production.flow = { past: past.map(row => ({ id: row.id, title: row.title })), humanized, ...(skipped ? { skipped } : {}), ...(humanized ? { firstDraft: first } : {}), unsupported, sources }
           production.engine = engine
           production.notice = notice

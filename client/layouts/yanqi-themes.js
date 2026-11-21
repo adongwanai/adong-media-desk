@@ -12,7 +12,7 @@ export const YANQI_DEFAULTS = {
   "templateId": "default",
   "coverStyle": "cover-bold",
   "fontSize": 17,
-  "font": "雅黑"
+  "font": "冬青黑体"
 }
 
 /** 言起的字体：只是 CSS font-family，不带字体文件。 */
@@ -521,12 +521,12 @@ export const YANQI_THEMES = [
     "id": "adong-xhs-dense",
     "name": "阿东信息流主题",
     "group": "信息流 / 社媒",
-    "description": "紧凑高信息密度，专为信息流长文优化的默认主力。",
+    "description": "首页抓停留，后页保信息密度。压缩页眉页脚和图片高度，给正文更多空间。",
     "styles": {
-      "imagePreview": "background-color: #ffffff; padding: 20px 22px 40px; box-sizing: border-box;",
+      "imagePreview": "background-color: #ffffff; padding: 12px 20px 34px; box-sizing: border-box;",
       "header": {
         "avatar": {
-          "container": "width: 32px; height: 32px; border-radius: 9px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06);",
+          "container": "width: 36px; height: 36px; border-radius: 50%; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06);",
           "placeholder": "background: #f5f5f5; transition: all 0.2s ease;",
           "image": "object-fit: cover; transition: transform 0.3s ease;"
         },
@@ -543,38 +543,38 @@ export const YANQI_THEMES = [
       },
       "title": {
         "h2": {
-          "base": "margin: 0; font-size: 1.62em; line-height: 1.26;",
+          "base": "margin: 10px 0 6px; font-size: 1.48em; line-height: 1.28;",
           "content": "font-weight: 800; color: #202124;",
           "after": ""
         },
         "h3": {
-          "base": "margin: 18px 0 8px; font-size: 1.18em; line-height: 1.36;",
+          "base": "margin: 9px 0 5px; font-size: 1.1em; line-height: 1.34;",
           "content": "font-weight: 750; color: #202124;",
           "after": ""
         },
         "base": {
-          "base": "margin: 14px 0 6px; font-size: 1.05em; line-height: 1.35;",
+          "base": "margin: 8px 0 4px; font-size: 1.02em; line-height: 1.34;",
           "content": "font-weight: 700; color: #202124;",
           "after": ""
         }
       },
-      "paragraph": "line-height: 1.58; margin: 0 0 0.72em; font-size: 15px; color: #3f3f46;",
+      "paragraph": "line-height: 1.52; margin: 0 0 0.48em; font-size: 15px; color: #3f3f46;",
       "emphasis": {
         "strong": "font-weight: 800; color: #0066FF; background: rgba(0,102,255,0.07); padding: 0 3px; border-radius: 3px;",
         "em": "font-style: normal; color: #1f2937; background: rgba(255,107,0,0.13); padding: 0 4px; border-radius: 3px;",
         "del": "text-decoration: line-through; color: #999999; opacity: 0.8;"
       },
       "list": {
-        "container": "padding-left: 22px; margin: 0 0 0.72em; color: #4b5563;",
-        "item": "margin: 0 0 0.42em; font-size: 15px; color: #4b5563; line-height: 1.55;",
-        "taskList": "list-style: none; margin-left: -18px; font-size: 15px; color: #4b5563; line-height: 1.55;"
+        "container": "padding-left: 20px; margin: 0 0 0.48em; color: #4b5563;",
+        "item": "margin: 0 0 0.28em; font-size: 15px; color: #3f3f46; line-height: 1.5;",
+        "taskList": "list-style: none; margin-left: -18px; font-size: 15px; color: #3f3f46; line-height: 1.5;"
       },
       "code": {
-        "block": "background: #111827; padding: 0.8em 0.95em; border-radius: 8px; font-size: 13px; font-family: 'SF Mono', Menlo, monospace; line-height: 1.48; white-space: pre-wrap; word-wrap: break-word; color: #f9fafb; margin: 0.85em 0; border: 1px solid #1f2937;",
-        "inline": "background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #111827; font-size: 14px; font-family: 'SF Mono', Menlo, monospace; border: 1px solid #e5e7eb;"
+        "block": "background: #111827; padding: 0.7em 0.85em; border-radius: 8px; font-size: 13px; font-family: 'SF Mono', Menlo, monospace; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; color: #f9fafb; margin: 0.55em 0; border: 1px solid #1f2937;",
+        "inline": "background: #f3f4f6; padding: 1px 5px; border-radius: 4px; color: #111827; font-size: 14px; font-family: 'SF Mono', Menlo, monospace; border: 1px solid #e5e7eb;"
       },
-      "quote": "border-left: 3px solid #0066FF; padding: 0 0 0 12px; margin: 0.75em 0; color: #4b5563; font-style: normal; font-size: 15px; line-height: 1.58; background: rgba(0,102,255,0.04); border-radius: 0 4px 4px 0;",
-      "image": "max-width: 100%; max-height: 252px; height: auto; margin: 0.62em auto; border-radius: 8px; box-shadow: 0 4px 14px rgba(15,23,42,0.08); object-fit: contain;",
+      "quote": "border-left: 3px solid #0066FF; padding: 2px 8px 2px 10px; margin: 0.48em 0; color: #4b5563; font-style: normal; font-size: 14.5px; line-height: 1.5; background: rgba(0,102,255,0.04); border-radius: 0 4px 4px 0;",
+      "image": "max-width: 100%; max-height: 236px; height: auto; margin: 0.42em auto; border-radius: 8px; box-shadow: 0 4px 14px rgba(15,23,42,0.08); object-fit: contain;",
       "link": "color: #0066FF; text-decoration: none; border-bottom: 1px solid rgba(0,102,255,0.28); transition: all 0.2s ease;",
       "table": {
         "container": "width: 100%; margin: 0.8em 0; border-collapse: collapse; font-size: 13px;",

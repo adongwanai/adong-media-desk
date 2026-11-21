@@ -4,7 +4,7 @@ import { extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const omitted = new Set(['.git', 'node_modules', '.runtime', 'release'])
+const omitted = new Set(['.git', '.claude', 'node_modules', '.runtime', 'release'])
 const textTypes = new Set(['.md', '.js', '.jsx', '.mjs', '.css', '.json', '.yml', '.yaml', '.sh', '.html', '.txt'])
 const issues = []
 let checked = 0

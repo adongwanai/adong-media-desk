@@ -1,7 +1,7 @@
 // 不开图片版对话框，把小红书图片版直接导出成 PNG：和图片版预览（layouts/cards-preview.jsx）同一套切页、排版和导出，
 // 用的也是同样的排版选择、署名和这一篇的封面、图片调整（填到草稿时传给平台的就是用户在图片版里看到的那几张）。
 import { cardToPng, inlineImage, measureFits } from './layouts/card-dom.js'
-import { CARD_LABELS, applyCoverMode, cardContext, formatDate, isTemplateCover, numberPages, paginateSection, planSections, renderCard, sectionHeadings } from './layouts/cards.js'
+import { CARD_LABELS, applyCoverMode, cardContext, dedupeSectionHeadings, formatDate, isTemplateCover, numberPages, packPages, paginateSection, planSections, renderCard, sectionHeadings } from './layouts/cards.js'
 import { parseBlocks } from './layouts/markdown.js'
 import { imageKey } from './layouts/yanqi.js'
 import { coverOf } from './version-flow.jsx'
@@ -38,7 +38,12 @@ export async function planCardPages({ cards, title, prefs, signature, media, the
   })
   // 量高度前等字体就位，不然切页和预览里不一样
   await document.fonts?.ready
-  const pages = numberPages(applyCoverMode(sectionsRaw, ctx.cover).flatMap(section => paginateSection(section, page => measureFits(page, ctx))))
+  const fits = page => measureFits(page, ctx)
+  const rawPages = dedupeSectionHeadings(applyCoverMode(sectionsRaw, ctx.cover, Boolean(prefs.coverOnly)))
+    .flatMap(section => paginateSection(section, fits, { repeatHeading: false }))
+  const pages = prefs.compactFlow === true
+    ? packPages(rawPages, fits, { includeCover: !isTemplateCover(ctx.cover) && !prefs.coverOnly })
+    : numberPages(rawPages)
   return { pages, ctx: { ...ctx, lines: false } }
 }
 

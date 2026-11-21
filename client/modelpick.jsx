@@ -8,12 +8,13 @@ export function ModelButton() {
   const native = useDesk(s => s.nativeAgent)
   const model = useDesk(s => s.model)
   const override = useDesk(s => s.settings?.assistant?.model)
-  if (native) return <span className="md-open-dock" title="对话使用 DSH 原生会话的模型与工具"><Icon name="spark" size={13} />DSH 原生 Agent</span>
-  if (native === false) return <span className="md-open-dock">未连接 DSH</span>
+  if (native === false) return <span className="md-topbar-model"><span className="md-open-dock">{t('未连接')}</span></span>
   return (
-    <button type="button" className="md-open-dock" title={t('助手模型')} onClick={() => setDesk({ modelPickOpen: true })}>
-      <Icon name="spark" size={13} />{override || model || t('助手模型')}
-    </button>
+    <span className="md-topbar-model">
+      <button type="button" className="md-open-dock" title={t('助手模型')} onClick={() => setDesk({ modelPickOpen: true })}>
+        <Icon name="spark" size={13} />{override || model || t('助手模型')}
+      </button>
+    </span>
   )
 }
 

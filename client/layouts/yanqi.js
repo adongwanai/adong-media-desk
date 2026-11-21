@@ -197,13 +197,37 @@ function rawText(text) {
  * @param {Array<object>} blocks - parseBlocks 的结果。
  * @returns {Array<object>} heading / paragraph / quote 带 runs，list 的每项带 runs，table 的每格是 runs。都保留 line / end。
  */
+const CALLOUT_SPEC = {
+  note: { label: '说明', color: '#3b82f6' },
+  info: { label: '信息', color: '#3b82f6' },
+  tip: { label: '技巧', color: '#10b981' },
+  success: { label: '结论', color: '#10b981' },
+  important: { label: '重点', color: '#8b5cf6' },
+  example: { label: '示例', color: '#8b5cf6' },
+  warning: { label: '注意', color: '#d97706' },
+  question: { label: '思考', color: '#d97706' },
+  caution: { label: '警惕', color: '#dc2626' },
+}
+
 export function richBlocks(blocks) {
   const pos = block => ({ line: block.line, end: block.end })
   const rich = blocks.map((block) => {
     switch (block.type) {
       case 'heading': return { type: 'heading', level: block.level, runs: parseInline(block.text), ...pos(block) }
       case 'paragraph': return { type: 'paragraph', runs: linesToRuns(block.lines), ...pos(block) }
-      case 'quote': return block.lines.length ? { type: 'quote', runs: linesToRuns(block.lines), ...pos(block) } : null
+      case 'quote': {
+        if (block.callout) {
+          const spec = CALLOUT_SPEC[block.callout.kind] ?? CALLOUT_SPEC.note
+          return {
+            type: 'callout',
+            kind: block.callout.kind,
+            title: parseInline(block.callout.title || spec.label),
+            runs: linesToRuns(block.lines),
+            ...pos(block),
+          }
+        }
+        return block.lines.length ? { type: 'quote', runs: linesToRuns(block.lines), ...pos(block) } : null
+      }
       case 'list': return {
         type: 'list',
         ordered: block.ordered,
@@ -225,6 +249,7 @@ export function richBlocks(blocks) {
 }
 
 function eachRuns(block, fn) {
+  if (block.title) block.title = fn(block.title)
   if (block.runs) block.runs = fn(block.runs)
   if (block.items) block.items = block.items.map(item => ({ ...item, runs: fn(item.runs) }))
   if (block.head) {
@@ -232,6 +257,44 @@ function eachRuns(block, fn) {
     block.rows = block.rows.map(row => row.map(fn))
   }
   return block
+}
+
+const WECHAT_LINK = /^https?:\/\/mp\.weixin\.qq\.com\//i
+
+/**
+ * 公众号外链自动沉底转文末脚注：非公众号域名的 http(s) 链接换成上标 [n]，相同地址合并编号，追加到文末参考链接。
+ * @param {Array<object>} blocks - richBlocks 的结果。
+ * @returns {{blocks: Array<object>, count: number}} 转换后的块与外链个数。
+ */
+export function extractLinkFootnotes(blocks) {
+  const existing = blocks.find(block => block.type === 'footnotes')
+  let nextNum = existing ? existing.items.length : 0
+  const byUrl = new Map()
+  const added = []
+  const mark = (runs, line) => runs.map((run) => {
+    if (!run.href || !/^https?:\/\//i.test(run.href) || WECHAT_LINK.test(run.href)) return run
+    let entry = byUrl.get(run.href)
+    if (!entry) {
+      nextNum += 1
+      entry = { n: nextNum, href: run.href, label: run.text !== run.href ? run.text : '', line }
+      byUrl.set(run.href, entry)
+      added.push(entry)
+    }
+    return { text: run.text, linkRef: entry.n }
+  })
+  const body = blocks
+    .filter(block => block.type !== 'footnotes')
+    .map(block => eachRuns({ ...block, ...(block.items ? { items: block.items.map(item => ({ ...item })) } : {}) }, runs => mark(runs, block.line)))
+  if (!added.length) return { blocks, count: 0 }
+  const extraItems = added.map(item => ({
+    n: item.n,
+    runs: [{ text: item.label ? `${item.label}：${item.href}` : item.href }],
+    line: item.line ?? 0,
+  }))
+  const merged = existing
+    ? { ...existing, items: [...existing.items, ...extraItems] }
+    : { type: 'footnotes', heading: '参考链接', items: extraItems, line: extraItems[0].line, end: extraItems.at(-1).line }
+  return { blocks: [...body, merged], count: added.length }
 }
 
 function numberFootnotes(blocks) {
@@ -265,14 +328,17 @@ export function runsHtml(runs, ctx) {
     if (run.br) return '<br>'
     const body = escapeHtml(run.text)
     if (run.fn) return `<sup style="${css('font-size: 0.75em; line-height: 0; vertical-align: super; margin: 0 1px', s.footnote?.ref, 'font-size: 0.75em')}">[${body}]</sup>`
+    if (run.linkRef) return `<span style="${css(s.link)}">${body}</span><sup style="${css('font-size: 0.75em; line-height: 0; vertical-align: super; margin: 0 1px', s.footnote?.ref, 'font-size: 0.75em')}">[${run.linkRef}]</sup>`
     if (run.code) return `<code style="${inlineCodeStyle(s, ctx.codeSize)}">${body}</code>`
-    if (run.bold) return `<strong style="${css(s.emphasis.strong)}">${body}</strong>`
+    if (run.bold) return `<strong style="${css(s.emphasis.strong, /background/.test(s.emphasis.strong ?? '') && !ctx.inHeadingBg && 'box-decoration-break: clone; -webkit-box-decoration-break: clone', ctx.inHeadingBg && 'background: transparent; padding: 0')}">${body}</strong>`
     if (run.italic) return `<em style="${css(s.emphasis.em)}">${body}</em>`
     if (run.del) return `<del style="${css(s.emphasis.del)}">${body}</del>`
     if (run.mark) return `<mark style="${css(s.highlight || MARK)}">${body}</mark>`
     if (run.href) {
-      const text = `<span style="${css(s.link)}">${body}</span>`
-      return ctx.links === 'url' ? `${text}<span style="${css('color: #8a8f98; font-size: 0.85em; word-break: break-all')}">（${escapeHtml(run.href)}）</span>` : text
+      const isRawUrl = /^https?:\/\//i.test(run.text.trim())
+      const text = `<span style="${css(s.link, isRawUrl && 'word-break: break-all; font-size: 0.92em')}">${body}</span>`
+      const showHref = ctx.links === 'url' && run.text.trim() !== run.href.trim()
+      return showHref ? `${text}<span style="${css('color: #8a8f98; font-size: 0.85em; word-break: break-all')}">（${escapeHtml(run.href)}）</span>` : text
     }
     return body
   }).join('')
@@ -284,8 +350,9 @@ export function headingHtml(level, runs, ctx, extra = {}) {
   const title = ctx.s.title[key]
   const tag = `h${Math.min(6, Math.max(1, level))}`
   const after = title.after ? `<span style="${css(title.after)}"></span>` : ''
+  const inHeadingBg = /background(?:-color)?\s*:(?!\s*(?:none|transparent))/i.test(`${title.content ?? ''};${extra.content ?? ''}`)
   // extra.attr：预览里给封面标题打的标记（data-slot="title"），点它就去改封面标题；导出时不带
-  return `<${tag}${lineAttr(ctx, extra.line)}${extra.attr ?? ''} style="${css(title.base, `font-family: ${ctx.font}`, extra.base)}"><span style="${css(title.content, extra.content)}">${runsHtml(runs, ctx)}</span>${after}</${tag}>`
+  return `<${tag}${lineAttr(ctx, extra.line)}${extra.attr ?? ''} style="${css(title.base, `font-family: ${ctx.font}`, extra.base)}"><span style="${css(title.content, extra.content)}">${runsHtml(runs, inHeadingBg ? { ...ctx, inHeadingBg: true } : ctx)}</span>${after}</${tag}>`
 }
 
 /** 预览里给块记上原文行号（data-line），点块时跳回编辑器；复制和导出时不带。 */
@@ -299,14 +366,34 @@ function codeHtml(block, ctx, at = '') {
   const { s } = ctx
   const color = readableColor(backgroundOf(s.code.block), firstColor(cssValue(s.code.block, 'color')))
   const dots = DOTS.map(c => `<span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${c};"></span>`).join('')
-  return `<pre${at} style="${css(s.code.block, `font-size: ${ctx.codeSize}px`, color && `color: ${color}`, 'text-shadow: none')}"><span style="display: flex; gap: 6px; margin: 8px 0 12px 0;">${dots}</span><code style="color: inherit; background: transparent; font-family: inherit; font-size: inherit; text-shadow: none;">${escapeHtml(block.text)}</code></pre>`
+  const head = block.lang
+    ? `<span style="display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px 0;"><span style="display: inline-flex; gap: 6px;">${dots}</span><span style="font-size: 11px; opacity: 0.65; letter-spacing: 0.4px; text-transform: lowercase;">${escapeHtml(block.lang)}</span></span>`
+    : `<span style="display: flex; gap: 6px; margin: 8px 0 12px 0;">${dots}</span>`
+  return `<pre${at} style="${css(s.code.block, `font-size: ${ctx.codeSize}px`, color && `color: ${color}`, 'text-shadow: none')}">${head}<code style="color: inherit; background: transparent; font-family: inherit; font-size: inherit; text-shadow: none;">${escapeHtml(block.text)}</code></pre>`
+}
+
+function calloutHtml(block, ctx, at = '') {
+  const { s } = ctx
+  const spec = CALLOUT_SPEC[block.kind] ?? CALLOUT_SPEC.note
+  const pageBg = backgroundOf(s.imagePreview) ?? '#ffffff'
+  const rgb = parseColor(pageBg)
+  const dark = rgb ? luminance(rgb) < 0.2 : false
+  const tint = mixColor(pageBg, spec.color, dark ? 0.2 : 0.08)
+  const textColor = firstColor(cssValue(s.paragraph, 'color')) ?? (dark ? '#f3f4f6' : '#1f2937')
+  const titleHtml = block.title?.length
+    ? `<p style="${css(`margin: 0 0 ${block.runs?.length ? '0.45em' : '0'}`, `font-family: ${ctx.font}`, `font-size: ${ctx.size}px`, 'line-height: 1.5')}"><strong style="${css(`color: ${spec.color}`, 'font-weight: 700')}">${runsHtml(block.title, ctx)}</strong></p>`
+    : ''
+  const bodyHtml = block.runs?.length
+    ? `<p style="${css(`margin: 0`, `font-family: ${ctx.font}`, `font-size: ${Math.max(12, ctx.size - 0.5)}px`, `color: ${textColor}`, 'line-height: 1.7')}">${runsHtml(block.runs, ctx)}</p>`
+    : ''
+  return `<blockquote${at} style="${css('margin: 1em 0; padding: 12px 16px; border-radius: 8px', `border-left: 4px solid ${spec.color}`, `background-color: ${tint}`, `color: ${textColor}`)}">${titleHtml}${bodyHtml}</blockquote>`
 }
 
 const UL_TYPES = ['disc', 'circle', 'square']
 const OL_TYPES = ['decimal', 'lower-alpha', 'lower-roman']
 
 /** 列表：按每项的层级拼出嵌套的 ul / ol。跨页接着写的那一项不再画项目符号。 */
-function listHtml(block, ctx) {
+function listHtml(block, ctx, edgeTrim = '') {
   const { s } = ctx
   const open = []
   let html = ''
@@ -314,7 +401,7 @@ function listHtml(block, ctx) {
     const tag = ordered ? 'ol' : 'ul'
     const type = (ordered ? OL_TYPES : UL_TYPES)[depth % 3]
     const from = ordered && start !== 1 ? ` start="${Number(start) || 1}"` : ''
-    const style = depth ? css(`list-style-type: ${type}`, 'margin: 0.3em 0 0.1em; padding-left: 1.4em') : css(`list-style-type: ${type}`, s.list.container)
+    const style = depth ? css(`list-style-type: ${type}`, 'margin: 0.3em 0 0.1em; padding-left: 1.4em') : css(`list-style-type: ${type}`, s.list.container, edgeTrim)
     html += `<${tag}${from} style="${style}">`
     open.push({ depth, tag })
   }
@@ -402,8 +489,9 @@ function tableHtml(block, ctx) {
 function footnotesHtml(block, ctx) {
   const { s } = ctx
   const ref = css('font-size: 0.8em; margin-right: 4px', s.footnote?.ref, 'font-size: 0.8em')
-  const rows = block.items.map(item => `<p${lineAttr(ctx, item.line)} style="${css(s.paragraph, `font-family: ${ctx.font}`, `font-size: ${Math.round(ctx.size * 0.82 * 2) / 2}px`, 'margin: 0 0 0.35em; line-height: 1.55')}"><span style="${ref}">[${item.n}]</span>${runsHtml(item.runs, ctx)}</p>`).join('')
-  return `<section${lineAttr(ctx, block.line)} style="${css('margin: 1.2em 0 0.4em; padding-top: 0.6em; border-top: 1px solid currentColor; opacity: 0.82')}">${rows}</section>`
+  const head = block.heading ? `<p style="${css(s.paragraph, `font-family: ${ctx.font}`, `font-size: ${Math.round(ctx.size * 0.82 * 2) / 2}px`, 'margin: 0 0 0.45em; font-weight: 600; line-height: 1.4')}">${escapeHtml(block.heading)}</p>` : ''
+  const rows = block.items.map(item => `<p${lineAttr(ctx, item.line)} style="${css(s.paragraph, `font-family: ${ctx.font}`, `font-size: ${Math.round(ctx.size * 0.82 * 2) / 2}px`, 'margin: 0 0 0.35em; line-height: 1.55; word-break: break-all')}"><span style="${ref}">[${item.n}]</span>${runsHtml(item.runs, ctx)}</p>`).join('')
+  return `<section${lineAttr(ctx, block.line)} style="${css('margin: 1.2em 0 0.4em; padding-top: 0.6em; border-top: 1px solid currentColor; opacity: 0.82')}">${head}${rows}</section>`
 }
 
 /**
@@ -411,19 +499,46 @@ function footnotesHtml(block, ctx) {
  * @param {object} block - richBlocks 的一项。
  * @param {object} ctx - { s: 主题样式, font, size, codeSize, links, paragraph?: 额外段落样式, image?: (block) => HTML }。
  */
-export function blockHtml(block, ctx) {
+export function blockHtml(block, ctx, edge = {}) {
   const { s } = ctx
   const at = lineAttr(ctx, block.line)
+  const trim = css(edge.first && 'margin-top: 2px', edge.last && 'margin-bottom: 0')
   switch (block.type) {
-    case 'heading': return headingHtml(block.level, block.runs, ctx, { line: block.line })
-    case 'paragraph': return `<p${at} style="${css(s.paragraph, `font-family: ${ctx.font}`, `font-size: ${ctx.size}px`, ctx.paragraph)}">${runsHtml(block.runs, ctx)}</p>`
-    case 'quote': return `<blockquote${at} style="${css(s.quote, `font-family: ${ctx.font}`, `font-size: ${ctx.size}px`)}">${runsHtml(block.runs, ctx)}</blockquote>`
-    case 'list': return listHtml(block, ctx)
+    case 'heading': return headingHtml(block.level, block.runs, ctx, { line: block.line, base: trim })
+    case 'paragraph': return `<p${at} style="${css(s.paragraph, `font-family: ${ctx.font}`, `font-size: ${ctx.size}px`, ctx.paragraph, trim)}">${runsHtml(block.runs, ctx)}</p>`
+    case 'quote': return `<blockquote${at} style="${css(s.quote, `font-family: ${ctx.font}`, `font-size: ${ctx.size}px`, trim)}">${runsHtml(block.runs, ctx)}</blockquote>`
+    case 'callout': return calloutHtml(block, ctx, at)
+    case 'list': return listHtml(block, ctx, trim)
     case 'table': return tableHtml(block, ctx)
     case 'code': return codeHtml(block, ctx, at)
     case 'rule': return `<hr${at} style="${css(s.hr)}">`
-    case 'image': return ctx.image ? ctx.image(block) : ''
+    case 'image': return ctx.image ? ctx.image(block, edge) : ''
     case 'footnotes': return footnotesHtml(block, ctx)
     default: return ''
+  }
+}
+
+/**
+ * 计算图片在裁剪框 (frameW × frameH) 内的完整未预裁切几何尺寸（同言起 .red-img-crop 思路并支持双向拉缩）：
+ * 避免使用 CSS object-fit: cover 先把超出 img 盒子的像素裁掉导致平移 (translate) 拖出白边。
+ * 当框比例与原图一致时 left=0, top=0, imgW=frameW, imgH=frameH（100% 完整无裁剪）；
+ * 当用户上下拉缩或左右拉缩改变外框比例时，img 保持原图宽高比完整铺底居中，随时可在框内自由拖动查看任意局部。
+ */
+export function coverImageBox(frameW, frameH, aspect = 4 / 3) {
+  const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : 4 / 3
+  const fw = Math.max(1, Number(frameW) || 1)
+  const fh = Math.max(1, Number(frameH) || 1)
+  let imgW = fw
+  let imgH = fw / ratio
+  if (imgH < fh - 0.01) {
+    imgH = fh
+    imgW = fh * ratio
+  }
+  const round2 = v => Math.round(v * 100) / 100
+  return {
+    imgW: round2(imgW),
+    imgH: round2(imgH),
+    left: round2((fw - imgW) / 2),
+    top: round2((fh - imgH) / 2),
   }
 }

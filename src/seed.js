@@ -117,6 +117,24 @@ export function migrateState(state) {
   for (const item of Array.isArray(state.items) ? state.items : []) {
     if (item && item.materials !== undefined) item.materials = cleanMaterials(item.materials)
   }
+  if (Array.isArray(state.chat) && state.chat.length) {
+    const cutoff = Math.max(0, Math.min(state.chat.length, 300) - 20)
+    state.chat = state.chat.slice(-300).map((row, idx) => {
+      if (!row || typeof row !== 'object') return row
+      if (idx < cutoff && (row.reasoning || row.activity)) {
+        const { reasoning: _r, activity: _a, ...rest } = row
+        return rest
+      }
+      if (Array.isArray(row.activity)) {
+        return {
+          ...row,
+          ...(typeof row.reasoning === 'string' && row.reasoning.length > 1500 ? { reasoning: `${row.reasoning.slice(0, 1500)}…` } : {}),
+          activity: row.activity.slice(-30).map(act => (act && typeof act.detail === 'string' && act.detail.length > 260 ? { ...act, detail: `${act.detail.slice(0, 260)}…` } : act)),
+        }
+      }
+      return row
+    })
+  }
   if (!Array.isArray(state.followerLog)) state.followerLog = []
   // 单条作品的时间序列（发布后 72 小时内的加密采样），每行带 ts；老数据没有这张表
   if (!Array.isArray(state.metricSamples)) state.metricSamples = []

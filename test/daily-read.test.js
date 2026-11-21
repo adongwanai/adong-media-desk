@@ -60,9 +60,11 @@ test('publicStale：打开大屏时，公开接口超过 6 小时没读到才补
   assert.equal(publicStale({ now, last: { running: true, startedAt: at(13, 14, 58).toISOString() }, hasLinks: true }), false)
 })
 
-test('isRunning：开始了没结束算在跑，超过十分钟当它已经断了', () => {
+test('isRunning：开始了没结束算在跑，超过十分钟或进程已退出当它已经断了', () => {
   const now = at(13, 7, 0)
   assert.equal(isRunning({ running: true, startedAt: at(13, 6, 55).toISOString() }, now), true)
+  assert.equal(isRunning({ running: true, pid: process.pid, startedAt: at(13, 6, 55).toISOString() }, now), true)
+  assert.equal(isRunning({ running: true, pid: 99999999, startedAt: at(13, 6, 55).toISOString() }, now), false)
   assert.equal(isRunning({ running: true, startedAt: at(13, 6, 30).toISOString() }, now), false)
   assert.equal(isRunning({ running: false, startedAt: at(13, 6, 55).toISOString() }, now), false)
   assert.equal(isRunning(null, now), false)
@@ -391,4 +393,42 @@ test('页面截图：文件名只用 ASCII；每轮最多存 3 张，每个平�
   const broken = await saveShots(join(dir, 'missing', 'deeper'), rows.slice(0, 1), at(14, 6, 6))
   assert.deepEqual([broken[0].error, broken[0].shot], ['后台页面是空的', undefined])
   assert.match(broken[0].shotError, /截图没存下/)
+}))
+
+test('边读边落盘与强制刷新：不等最后一个平台结束先写进 store；force 绕过 10 分钟冷却；scope=public 不污染后台卡片', () => withStore(async (store) => {
+  await store.mutate('', draft => (applyOps(draft, [
+    { op: 'add_account', platform: 'B站', url: 'https://space.bilibili.com/2' },
+    { op: 'add_account', platform: '小红书', url: 'https://www.xiaohongshu.com/user/profile/1' },
+  ]), draft))
+  let midFollowers = null
+  let midProgress = null
+  const fetchImpl = async () => json({ code: 0, data: { follower: 888, like_num: 10, archive_count: 2 } })
+  const backstage = {
+    open: async () => ({
+      readPage: async (url) => {
+        // 浏览器刚打开第一个平台时，公开接口读到的 B 站粉丝数应该已经落盘了
+        if (midFollowers === null) {
+          const mid = await store.read()
+          midFollowers = mid.followerLog.find(r => r.platform === 'B站')?.followers ?? null
+          midProgress = mid.autoRead?.progress ?? null
+        }
+        return { url, text: url.includes('xiaohongshu') ? '粉丝 22036' : '' }
+      },
+      close: async () => {},
+    }),
+    callText: async () => ({ text: JSON.stringify({ followers: '22036' }) }),
+    wait: async () => {},
+  }
+  const clock = at(14, 10, 0)
+  await runAccountRead(store, { trigger: 'manual', force: true, fetchImpl, backstage, now: () => clock })
+  assert.equal(midFollowers, 888, '公开接口读完立刻落盘，不等后台全部跑完')
+  assert.equal(midProgress?.current, '小红书')
+  // 紧接着 1 分钟后再次带 force 手动刷新：不被 10 分钟冷却拦住
+  const forceAgain = await runAccountRead(store, { trigger: 'manual', force: true, platforms: ['小红书'], fetchImpl, backstage, now: () => at(14, 10, 1) })
+  assert.equal(forceAgain.results.find(r => r.platform === '小红书')?.skipped, undefined)
+  assert.equal(forceAgain.results.find(r => r.platform === '小红书')?.followers, 22036)
+  // 打开大屏触发 scope=public 时，跳过免登录读不了的小红书主页，不把报错盖在已有后台数据的卡片上
+  await runAccountRead(store, { trigger: 'refresh', scope: 'public', fetchImpl, now: () => at(14, 10, 2) })
+  const card = computeBoard(await store.read(), at(14, 10, 2)).platforms.find(r => r.platform === '小红书')
+  assert.equal(card.readError, null)
 }))

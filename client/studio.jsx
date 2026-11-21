@@ -13,6 +13,11 @@ import { markdownPlain } from './md-render.js'
 import { AutoText, Plate, askAbout, isBusy, unescapeJson } from './studio-kit.jsx'
 import { Icon, IconButton, Segmented, Swap } from './ui.jsx'
 import { LayoutPreview } from './layouts/preview.jsx'
+import { clampRate, DEFAULT_RATE, scriptOf } from './video/captions.js'
+import { CutTab } from './video/cut.jsx'
+import { FinishTab } from './video/finish.jsx'
+import { readPref } from './video/prompter.js'
+import { RecordTab } from './video/record.jsx'
 import { TitleButton, TitlePickerLayer, VersionsView } from './versions.jsx'
 import { SPRING_SNAP, SPRING_SOFT, fmtDate, fmtWhen, reducedMotion, textLength, toLocalInput } from './util.js'
 
@@ -260,18 +265,138 @@ function Viewer({ item, target, onChange, onClose }) {
   )
 }
 
-// 稿面的几种视图：正文、两种排版预览、平台版本，放在同一个分段控件里
+// 稿面的并列同级视图：正文、长文、图文卡片、口播内容、视频录剪、平台版本
 const SHEET_VIEWS = [
   { value: 'draft', label: '正文', icon: 'fileText' },
   { value: 'wechat', label: '长文', icon: 'book' },
   { value: 'xhs', label: '图文卡片', icon: 'wall' },
   { value: 'spoken', label: '口播内容', icon: 'chat' },
-  { value: 'versions', label: '平台版本', icon: 'branch', extra: true },
+  { value: 'video', label: '视频录剪', icon: 'film' },
+  { value: 'versions', label: '平台版本', icon: 'branch' },
 ]
 
-/** 稿面顶上的一行：左栏收起时放返回和「灵感和对话」，右边是视图切换。 */
-function SheetBar({ layout, onLayout, done, collapsed }) {
-  if (!done && !collapsed) return null
+function defaultSheetLayout(item) {
+  const goal = item?.creation?.goal
+  if (goal === 'article' || goal === 'both') return 'wechat'
+  if (goal === 'script') return 'spoken'
+  return 'xhs'
+}
+
+/** 原地视频录制、粗剪与成片面板：在单篇工作区内与其他产出平级切换，也可一键进全屏视频台。 */
+function StudioVideoPane({ item, onGoSpoken }) {
+  const takes = item.production?.takes ?? []
+  const rawTakes = takes.filter(row => row.kind !== 'render')
+  const [sub, setSub] = React.useState(() => (rawTakes.length ? 'cut' : 'record'))
+  const [busy, setBusy] = React.useState(false)
+  const [cutTakeId, setCutTakeId] = React.useState(null)
+  const rate = React.useMemo(() => clampRate(readPref('rate', DEFAULT_RATE)), [])
+  const script = scriptOf(item.production)
+
+  return (
+    <section className="md-layout-card md-studio-video" aria-label={t('视频录剪')}>
+      <header className="md-tile-head md-layout-head">
+        <Segmented
+          label={t('视频环节')}
+          value={sub}
+          onChange={val => !busy && setSub(val)}
+          options={[
+            { value: 'record', label: t('提词录制'), icon: 'user' },
+            { value: 'cut', label: rawTakes.length ? `${t('自动粗剪')} (${rawTakes.length})` : t('自动粗剪'), icon: 'film' },
+            { value: 'finish', label: t('合成成片'), icon: 'spark' },
+          ]}
+        />
+        {!script ? (
+          <button type="button" className="md-inline-link" onClick={onGoSpoken}>
+            {t('先去口播内容生成提词稿 →')}
+          </button>
+        ) : null}
+        <span className="md-grow" />
+        <button
+          type="button"
+          className="md-pill is-small"
+          disabled={busy}
+          onClick={() => setDesk({ focusId: null, view: 'video', videoFocusId: item.id, videoStep: sub })}
+          title={t('在独立视频工作台中全屏打开（含字幕轴微调与发布包）')}
+        >
+          <Icon name="upRight" size={13} />{t('全屏视频台')}
+        </button>
+      </header>
+      <div className={`md-studio-video-body md-vd-panel is-${sub}`}>
+        {sub === 'record' ? (
+          <RecordTab
+            key={item.id}
+            item={item}
+            script={script}
+            rate={rate}
+            onBusy={setBusy}
+            onCut={(takeId) => { setCutTakeId(takeId); setSub('cut') }}
+          />
+        ) : null}
+        {sub === 'cut' ? (
+          <CutTab
+            key={item.id}
+            item={item}
+            takeId={cutTakeId}
+            setTakeId={setCutTakeId}
+            onRecord={() => setSub('record')}
+            onFinish={() => setSub('finish')}
+          />
+        ) : null}
+        {sub === 'finish' ? (
+          <FinishTab
+            key={item.id}
+            item={item}
+            script={script}
+            rate={rate}
+            onBusy={setBusy}
+            onRecord={() => setSub('record')}
+          />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function IdleSheet({ item }) {
+  const [starting, setStarting] = React.useState(false)
+  const styles = useDesk(s => s.state?.styles ?? [])
+  const activeId = useDesk(s => s.state?.activeStyleId)
+  const styleName = styles.find(s => s.id === activeId)?.name ?? t('默认风格')
+  const goal = item.creation?.goal ?? 'xhs'
+  const goalLabel = goal === 'xhs' ? t('小红书图文卡片') : goal === 'script' ? t('口播稿') : t('公众号长文')
+  const btnLabel = goal === 'xhs' ? t('立即生成小红书图文') : goal === 'script' ? t('立即生成口播稿') : t('按当前风格直接成稿')
+  const start = async () => {
+    setStarting(true)
+    try { await runProduce(item.id, { withImages: false, goal }) } finally { setStarting(false) }
+  }
+  return (
+    <section className="md-tile md-idle-sheet">
+      <div className="md-idle-sheet-inner">
+        <span className="md-idle-kicker"><Icon name="spark" size={13} /><span>{goalLabel} · {styleName}</span></span>
+        <h3>{t('点左侧「生成小红书图文」或在下方对话开聊，这里实时长出成稿')}</h3>
+        <div className="md-idle-steps" aria-hidden="true">
+          <span><b>1</b>{t('读取选题与附件')}</span>
+          <i>→</i>
+          <span><b>2</b>{t('检索信源与配图')}</span>
+          <i>→</i>
+          <span><b>3</b>{goal === 'xhs' ? t('自动排成图文卡片') : goal === 'script' ? t('生成提词口播稿') : t('自动排版长文')}</span>
+        </div>
+        <button type="button" className="md-pill is-primary" disabled={starting} onClick={start}>
+          <Icon name="spark" size={14} />{starting ? t('正在开始…') : btnLabel}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/** 稿面顶上的一行：成稿过程与完成后高度保持一致（消除完稿瞬间跳动）；左栏收起时放返回和「灵感和对话」，右边是并列视图切换。 */
+function SheetBar({ layout, onLayout, done, running, collapsed, goal, liveWords, liveCards, streamView, onStreamView }) {
+  if (!done && !running && !collapsed) return null
+  const streamLabel = goal === 'xhs'
+    ? (liveWords > 0 ? t('正在生成小红书图文 · 已写 {n} 字（第 {c} 张卡）', { n: liveWords, c: liveCards }) : t('正在生成小红书图文…'))
+    : goal === 'script'
+      ? (liveWords > 0 ? t('正在生成口播稿 · 已写 {n} 字', { n: liveWords }) : t('正在生成口播稿…'))
+      : (liveWords > 0 ? t('正在流式成稿 · 已写 {n} 字', { n: liveWords }) : t('正在流式成稿…'))
   return (
     <div className="md-sheet-bar">
       {collapsed ? (
@@ -280,9 +405,24 @@ function SheetBar({ layout, onLayout, done, collapsed }) {
           <button type="button" className="md-pill is-small md-sheet-brief" aria-expanded={false} title={t('把左边的灵感卡和对话放回来')} onClick={() => setDesk({ studioDock: true })}><Icon name="chat" size={13} />{t('灵感和对话')}</button>
         </span>
       ) : null}
-      {/* 正文、两种排版预览和平台版本是同一组视图，放在一个分段控件里 */}
-      {done ? <Segmented label={t('视图')} value={layout} onChange={onLayout} options={SHEET_VIEWS.filter(view => !view.extra).map(view => ({ value: view.value, label: t(view.label), icon: view.icon }))} /> : null}
-      {done ? <details className="md-sheet-more md-b-menu"><summary className="md-pill is-small">{layout === 'versions' ? t('平台版本') : '更多'}<Icon name="chevD" size={12} /></summary><div className="md-b-menu-list"><button type="button" onClick={event => { onLayout('versions'); event.currentTarget.closest('details').open = false }}>{t('平台版本')}</button></div></details> : null}
+      {done ? (
+        <Segmented label={t('视图')} value={layout} onChange={onLayout} options={SHEET_VIEWS.map(view => ({ value: view.value, label: t(view.label), icon: view.icon }))} />
+      ) : running ? (
+        <div className="md-sheet-live-bar">
+          <span className="md-sheet-streaming"><span className="md-live-dot" aria-hidden="true" /><span className="md-shimmer">{streamLabel}</span></span>
+          {goal === 'xhs' && liveWords >= 30 ? (
+            <Segmented
+              label={t('流式预览方式')}
+              value={streamView}
+              onChange={onStreamView}
+              options={[
+                { value: 'text', label: t('流式正文'), icon: 'fileText' },
+                { value: 'xhs', label: t('实时卡片'), icon: 'wall' },
+              ]}
+            />
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -291,11 +431,29 @@ function Sheet({ item, live, layout, onLayout, collapsed }) {
   const settings = useDesk(s => s.settings)
   const [open, setOpen] = React.useState(null)
   const [viewing, setViewing] = React.useState(null)
+  const [streamView, setStreamView] = React.useState('text')
+  React.useEffect(() => { setStreamView('text') }, [item.id])
   // 写好之后可以切到排版和平台版本；格子区只是藏起来，切回来时滚动位置和编辑都还在
   const done = item.production?.status === 'done'
   const updating = live?.native && (live.drafts?.article || live.drafts?.spoken)
-  const platform = done && (!updating || layout === 'spoken') && layout !== 'draft' ? layout : undefined
   const production = item.production
+  const goal = item.creation?.goal ?? 'xhs'
+  const isStreaming = Boolean(production?.status === 'running' || updating)
+  const rawStreamText = String(live?.text ?? '')
+  const liveWords = isStreaming && rawStreamText ? textLength(markdownPlain(rawStreamText)) : 0
+  const liveCards = goal === 'xhs' && liveWords > 0 ? Math.max(1, (rawStreamText.match(/^##\s+/gm)?.length ?? 0) + 1) : 0
+  const liveXhsPreview = !done && isStreaming && goal === 'xhs' && streamView === 'xhs' && liveWords >= 30
+  const platform = liveXhsPreview ? 'xhs' : (done && (!updating || layout === 'spoken' || layout === 'video') && layout !== 'draft' ? layout : undefined)
+  const streamTitle = React.useMemo(() => {
+    if (!liveXhsPreview) return ''
+    const h1 = /^#\s+(.+)\n/.exec(rawStreamText)?.[1]?.trim()
+    return h1 || production?.title || item.title || ''
+  }, [liveXhsPreview, rawStreamText, production?.title, item.title])
+  const streamProd = React.useMemo(() => {
+    if (!liveXhsPreview) return null
+    const body = /^#\s+.+\n+/.test(rawStreamText) ? rawStreamText.replace(/^#\s+.+\n+/, '') : rawStreamText
+    return { ...(production ?? {}), status: 'running', title: streamTitle, article: body }
+  }, [liveXhsPreview, rawStreamText, production, streamTitle])
   const isArticle = useIsArticle(production, item)
   // 分镜只属于脚本；脚本写好了却没有分镜（导入的稿子）也不留一格空分镜，正文占满
   const withShots = !isArticle && (!done || (production.shots ?? []).length > 0)
@@ -362,23 +520,43 @@ function Sheet({ item, live, layout, onLayout, collapsed }) {
     if (layout !== 'draft') onLayout('draft')
     requestAnimationFrame(() => requestAnimationFrame(() => locateSentence(articleRef.current, sentence)))
   }
+  const hasStartedOrDone = Boolean(production) || Boolean(updating)
   return (
-    <div className={`md-sheet ${done || collapsed ? 'has-layouts' : ''}`} data-layout={platform}>
-      <SheetBar layout={layout} onLayout={onLayout} done={done} collapsed={collapsed} />
+    <div className={`md-sheet ${done || isStreaming || collapsed ? 'has-layouts' : ''}`} data-layout={platform}>
+      <SheetBar
+        layout={layout}
+        onLayout={onLayout}
+        done={done}
+        running={isStreaming}
+        collapsed={collapsed}
+        goal={goal}
+        liveWords={liveWords}
+        liveCards={liveCards}
+        streamView={streamView}
+        onStreamView={setStreamView}
+      />
       {done ? <ClaimsBar item={item} onLocate={locate} /> : null}
-      <div className={`md-bento ${open ? 'has-open' : ''} ${withShots ? '' : 'is-solo'}`} ref={bento}>
-        <HeroTile item={item} live={live} onView={setViewing} compact={compact} />
-        <section {...tile('article')}>
-          <ArticleTile item={item} live={live} open={open === 'article'} onToggle={() => toggle('article')} onView={setViewing} tileRef={articleRef} />
-        </section>
-        {withShots ? (
-          <section {...tile('shots')}>
-            <ShotsTile item={item} live={live} count={settings?.shotCount ?? 6} open={open === 'shots'} onToggle={() => toggle('shots')} onView={setViewing} />
+      {hasStartedOrDone ? (
+        <div className={`md-bento ${open ? 'has-open' : ''} ${withShots ? '' : 'is-solo'}`} ref={bento}>
+          <HeroTile item={item} live={live} onView={setViewing} compact={compact} />
+          <section {...tile('article')}>
+            <ArticleTile item={item} live={live} open={open === 'article'} onToggle={() => toggle('article')} onView={setViewing} tileRef={articleRef} />
           </section>
-        ) : null}
-      </div>
-      {platform && !['versions', 'spoken'].includes(platform) ? <LayoutPreview mode={platform} production={item.production} title={item.production.title || item.title} itemId={item.id} onOpenVersions={() => onLayout('versions')} /> : null}
+          {withShots ? (
+            <section {...tile('shots')}>
+              <ShotsTile item={item} live={live} count={settings?.shotCount ?? 6} open={open === 'shots'} onToggle={() => toggle('shots')} onView={setViewing} />
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <div className="md-bento is-solo is-idle-mode" ref={bento}>
+          <IdleSheet item={item} />
+        </div>
+      )}
+      {liveXhsPreview && streamProd ? <LayoutPreview mode="xhs" production={streamProd} title={streamTitle} /> : null}
+      {!liveXhsPreview && platform && !['versions', 'spoken', 'video'].includes(platform) ? <LayoutPreview mode={platform} production={item.production} title={item.production.title || item.title} itemId={item.id} onOpenVersions={() => onLayout('versions')} /> : null}
       {platform === 'spoken' ? <SpokenContent key={item.id} item={item} /> : null}
+      {platform === 'video' ? <StudioVideoPane key={item.id} item={item} onGoSpoken={() => onLayout('spoken')} /> : null}
       {platform === 'versions' ? <VersionsView item={item} /> : null}
       {done ? <TitlePickerLayer item={item} /> : null}
       {viewing ? <Viewer item={item} target={viewing} onChange={setViewing} onClose={() => setViewing(null)} /> : null}
@@ -431,6 +609,83 @@ function locateSentence(tile, sentence) {
 }
 
 const DONE_SUGGESTIONS = ['标题再短一点', '语气轻松一点', '开场再抓人一点', '封面大字更有冲击力']
+const CHAT_W_KEY = 'media-desk:studio-chat-w'
+
+function useStudioChatWidth() {
+  const [width, setWidth] = React.useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(CHAT_W_KEY))
+      return Number.isFinite(saved) && saved >= 280 && saved <= 560 ? saved : 340
+    } catch {
+      return 340
+    }
+  })
+  const persist = (val) => {
+    const clamped = Math.round(Math.min(560, Math.max(280, val)))
+    setWidth(clamped)
+    try { window.localStorage.setItem(CHAT_W_KEY, String(clamped)) } catch { /* ignore */ }
+  }
+  const onPointerDown = (event) => {
+    event.preventDefault()
+    const handle = event.currentTarget
+    const box = handle.parentElement?.getBoundingClientRect()
+    if (!box) return
+    handle.setPointerCapture(event.pointerId)
+    handle.classList.add('is-dragging')
+    const move = e => persist(e.clientX - box.left)
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.classList.remove('is-dragging')
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+  }
+  const onKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); persist(width - 16) }
+    if (event.key === 'ArrowRight') { event.preventDefault(); persist(width + 16) }
+  }
+  const reset = () => persist(340)
+  return { width, onPointerDown, onKeyDown, reset }
+}
+
+/** 左栏标题行的快速换篇器：下拉选任意选题/成稿，或点上下篇直接切，不用反复退回灵感墙。 */
+function PieceSwitcher({ currentId }) {
+  const items = useDesk(s => s.state?.items ?? [])
+  const list = React.useMemo(() => {
+    const roots = items.filter(i => !i.parentId && i.title)
+    const real = roots.filter(i => !i.sample)
+    return (real.length ? real : roots).slice(0, 40)
+  }, [items])
+  const idx = list.findIndex(i => i.id === currentId)
+  if (list.length <= 1) return <h2>{t('成稿')}</h2>
+  const switchTo = (nextId) => {
+    if (nextId && nextId !== currentId) setDesk({ focusId: nextId, sheetOrigin: null, chatQuote: null })
+  }
+  return (
+    <div className="md-studio-switcher">
+      <label className="md-studio-pick" title={t('快速切换稿件')}>
+        <span>{t('成稿')}</span>
+        <Icon name="chevUD" size={12} />
+        <select value={currentId} onChange={e => switchTo(e.target.value)} aria-label={t('快速切换稿件')}>
+          {list.map(row => (
+            <option key={row.id} value={row.id}>
+              {(row.production?.title || row.title).slice(0, 28)}{row.production?.status === 'done' ? ` · ${t('已成稿')}` : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="md-studio-step">
+        <button type="button" disabled={idx <= 0} onClick={() => idx > 0 && switchTo(list[idx - 1].id)} title={t('上一篇')} aria-label={t('上一篇')}>
+          <Icon name="chevL" size={12} />
+        </button>
+        <button type="button" disabled={idx < 0 || idx >= list.length - 1} onClick={() => idx >= 0 && idx < list.length - 1 && switchTo(list[idx + 1].id)} title={t('下一篇')} aria-label={t('下一篇')}>
+          <Icon name="chevR" size={12} />
+        </button>
+      </span>
+    </div>
+  )
+}
 
 export function Studio() {
   const id = useDesk(s => s.focusId)
@@ -439,21 +694,29 @@ export function Studio() {
   const live = useDesk(s => s.live[s.focusId])
   const settings = useDesk(s => s.settings)
   const chatOpen = useDesk(s => s.studioDock)
+  const chatSizer = useStudioChatWidth()
   const ref = React.useRef(null)
   const production = item?.production
   const running = production?.status === 'running'
   const watching = running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)
   // 视图放在这一层：排版和平台版本要整块宽度，左边的灵感卡和对话默认收起，点「灵感和对话」再放回来
-  const [layout, setLayout] = React.useState('xhs')
-  // 「怎么用」里的「带我去」可以指定打开后停在哪个视图（sheetLayout），用一次就清掉。换一篇时先回正文，再看有没有指定
+  const [layout, setLayout] = React.useState(() => defaultSheetLayout(item))
+  // 「怎么用」里的「带我去」可以指定打开后停在哪个视图（sheetLayout），用一次就清掉
   const wanted = useDesk(s => s.sheetLayout)
-  React.useEffect(() => { if (!getDesk().sheetLayout) setLayout('xhs') }, [id])
+  React.useEffect(() => {
+    if (!getDesk().sheetLayout) setLayout(defaultSheetLayout(getDesk().state?.items.find(i => i.id === id)))
+  }, [id])
   React.useEffect(() => {
     if (!wanted) return
     if (SHEET_VIEWS.some(view => view.value === wanted)) setLayout(wanted)
     setDesk({ sheetLayout: null })
   }, [wanted])
   const done = production?.status === 'done'
+  const itemGoal = item?.creation?.goal
+  React.useEffect(() => {
+    if (!done && !getDesk().sheetLayout) setLayout(defaultSheetLayout(item))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done, itemGoal])
   const collapsed = done && layout !== 'draft' && !chatOpen
 
   React.useEffect(() => {
@@ -490,14 +753,14 @@ export function Studio() {
   React.useEffect(() => { if (id && !item) closeItem() }, [id, item])
   if (!item) return null
   return (
-    <div className={`md-studio ${chatOpen ? 'chat-open' : ''} ${collapsed ? 'is-wide' : ''}`} ref={ref} role="dialog" aria-label={t('灵感')}>
+    <div className={`md-studio ${chatOpen ? 'chat-open' : ''} ${collapsed ? 'is-wide' : ''}`} style={{ '--chat-w': `${chatSizer.width}px` }} ref={ref} role="dialog" aria-label={t('灵感')}>
       <div className="md-studio-chat" hidden={collapsed}>
         <ChatPanel
           itemId={item.id}
           head={(
             <>
               <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
-              <h2>{t('成稿')}</h2>
+              <PieceSwitcher currentId={item.id} />
               <span className="md-grow" />
               {done && layout !== 'draft' ? <IconButton icon="shrink" label={t('收起左栏，把地方让给排版')} onClick={() => setDesk({ studioDock: false })} /> : null}
             </>
@@ -509,6 +772,21 @@ export function Studio() {
           intro={false}
         />
       </div>
+      {collapsed ? null : (
+        <div
+          className="md-studio-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('拖动调整左栏对话宽度')}
+          title={t('拖动调整左栏宽度（双击恢复默认）')}
+          tabIndex={0}
+          onPointerDown={chatSizer.onPointerDown}
+          onKeyDown={chatSizer.onKeyDown}
+          onDoubleClick={chatSizer.reset}
+        >
+          <i />
+        </div>
+      )}
       {collapsed ? null : <button type="button" className="md-chat-toggle" aria-label={t('打开对话')} onClick={() => setDesk(s => ({ studioDock: !s.studioDock }))}><Icon name="chat" size={16} /></button>}
       <Sheet key={item.id} item={item} live={live} layout={layout} onLayout={setLayout} collapsed={collapsed} />
     </div>

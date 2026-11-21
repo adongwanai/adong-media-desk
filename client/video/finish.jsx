@@ -162,6 +162,7 @@ export function FinishTab({ item, script, rate, onBusy, onRecord }) {
   // 只用图文的模板不接录像
   const source = template.source === 'images' ? null : sources.find(row => row.id === sourceId) ?? null
   const [aspect, setAspect] = React.useState(template.aspect)
+  const [frameStyle, setFrameStyle] = React.useState(() => readPref('frameStyle', 'bleed'))
   const [themeId, setThemeId] = React.useState(chosenTheme)
   const [voiceId, setVoiceId] = React.useState(() => takes.filter(row => row.kind === 'voice').at(-1)?.id ?? '')
   const lines = React.useMemo(() => scriptTiming(script, rate).lines.filter(row => row.spoken).map(row => row.text), [script, rate])
@@ -184,6 +185,7 @@ export function FinishTab({ item, script, rate, onBusy, onRecord }) {
   const audio = React.useRef(null)
   const context = () => { audio.current ??= new AudioContext(); return audio.current }
   React.useEffect(() => writePref('template', templateId), [templateId])
+  React.useEffect(() => writePref('frameStyle', frameStyle), [frameStyle])
   React.useEffect(() => writePref(`slots:${item.id}`, slots), [item.id, slots])
   React.useEffect(() => writePref('previewQuality', quality), [quality])
   React.useEffect(() => () => { abort.current?.abort(); audio.current?.close().catch(() => {}) }, [])
@@ -231,8 +233,8 @@ export function FinishTab({ item, script, rate, onBusy, onRecord }) {
     if (el.width !== w || el.height !== h) { el.width = w; el.height = h }
     const ctx = el.getContext('2d')
     ctx.setTransform(scale, 0, 0, scale, 0, 0)
-    drawFrame(ctx, plan, Math.min(at, plan.total - 0.01), { W: size[0], H: size[1], colors, images, video: previewVideo.current })
-  }, [plan, images, size, scale, colors])
+    drawFrame(ctx, plan, Math.min(at, plan.total - 0.01), { W: size[0], H: size[1], colors, images, video: previewVideo.current, frameStyle })
+  }, [plan, images, size, scale, colors, frameStyle])
   // 拖动预览：录像模式先跳到那一帧，跳好再画
   React.useEffect(() => {
     if (render.phase !== 'idle' || playing) return
@@ -314,6 +316,7 @@ export function FinishTab({ item, script, rate, onBusy, onRecord }) {
       const result = await renderMontage({
         plan, size, colors, images: images ?? new Map(), canvas: canvas.current, context: context(),
         narration: !source && narration.status === 'ready' ? narration.buffer : null, videoSrc: source?.src ?? null,
+        frameStyle,
         signal: controller.signal, onProgress: progress => setRender(r => ({ ...r, progress })),
       })
       if (!result) { toast(t('已取消渲染')); return }
@@ -449,6 +452,12 @@ export function FinishTab({ item, script, rate, onBusy, onRecord }) {
             : plan.captionSource === 'speech' ? t('字幕按这条录像里真正出声的段落排时间：没人说话的地方不挂字幕。')
               : t('这条录像没有提词记录，也还没分析出声音，字幕按口播稿和语速估时间，可能和嘴型对不齐。')}</p> : null}
           <div className="md-ed-field"><span>{t('画幅')}</span><Segmented label={t('画幅')} value={aspect} onChange={v => !rendering && setAspect(v)} options={[{ value: 'portrait', label: t('竖屏 9:16') }, { value: 'landscape', label: t('横屏 16:9') }]} /></div>
+          {source ? (
+            <div className="md-ed-field">
+              <span>{t('录像边框风格')}</span>
+              <Segmented label={t('录像边框风格')} value={frameStyle} onChange={v => !rendering && setFrameStyle(v)} options={[{ value: 'bleed', label: t('标准铺满') }, { value: 'window', label: t('圆角桌面窗') }]} />
+            </div>
+          ) : null}
           <label className="md-ed-field"><span>{t('配色（言起主题）')}</span>
             <select className="md-vd-select" value={theme.id} disabled={rendering} onChange={e => setThemeId(e.target.value)}>{YANQI_THEMES.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
           </label>

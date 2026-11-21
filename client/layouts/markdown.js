@@ -11,6 +11,8 @@ const IMAGE = /^\s*!\[([^\]\n]*)\]\(\s*([^)\s]+)(?:\s+["'][^"'\n]*["'])?\s*\)\s*
 const TASK = /^\[([ xX])\]\s+/
 // 脚注定义：[^名字]: 内容
 const FOOTDEF = /^\[\^([^\]\s]{1,40})\]:\s?(.*)$/
+// GitHub / Obsidian 提示块：> [!TIP] 可选标题
+const CALLOUT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|INFO|SUCCESS|QUESTION|EXAMPLE)\][+-]?(?:\s+(.*))?$/i
 
 function startsBlock(line, next) {
   return /^#{1,6}\s/.test(line) || /^\s*>/.test(line) || LIST.test(line) || FENCE.test(line) || RULE.test(line) || IMAGE.test(line) || FOOTDEF.test(line) || (TABLE_ROW.test(line) && TABLE_RULE.test(next ?? ''))
@@ -98,10 +100,11 @@ export function parseBlocks(source) {
     if (!line.trim()) { i += 1; continue }
     if (FENCE.test(line)) {
       const fence = FENCE.exec(line)[1]
+      const lang = line.trim().slice(fence.length).trim().split(/\s+/)[0].replace(/[^\w+#.-]/g, '').slice(0, 24)
       const body = []
       i += 1
       while (i < lines.length && !lines[i].trim().startsWith(fence)) { body.push(lines[i]); i += 1 }
-      blocks.push({ type: 'code', text: body.join('\n'), line: at, end: Math.min(i, lines.length - 1) })
+      blocks.push({ type: 'code', text: body.join('\n'), ...(lang ? { lang } : {}), line: at, end: Math.min(i, lines.length - 1) })
       i += 1
       continue
     }
@@ -125,7 +128,13 @@ export function parseBlocks(source) {
     if (/^\s*>/.test(line)) {
       const quote = []
       while (i < lines.length && /^\s*>/.test(lines[i])) { quote.push(lines[i].replace(/^\s*>\s?/, '')); i += 1 }
-      blocks.push({ type: 'quote', lines: quote.filter(row => row.trim()), line: at, end: i - 1 })
+      const trimmed = quote.filter(row => row.trim())
+      const alert = trimmed[0] ? CALLOUT.exec(trimmed[0].trim()) : null
+      if (alert) {
+        blocks.push({ type: 'quote', callout: { kind: alert[1].toLowerCase(), title: (alert[2] ?? '').trim() }, lines: trimmed.slice(1), line: at, end: i - 1 })
+      } else {
+        blocks.push({ type: 'quote', lines: trimmed, line: at, end: i - 1 })
+      }
       continue
     }
     if (TABLE_ROW.test(line) && TABLE_RULE.test(lines[i + 1] ?? '')) {

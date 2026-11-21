@@ -59,9 +59,9 @@ export function ConvertCard({ item, onManual }) {
     <section className="md-vd-card md-vd-hero">
       <Icon name="pen" size={26} />
       <h3>{t('这篇是按「文章」写的，先改写成口播稿')}</h3>
-      <p>{t('由 DSH 原生 Agent 改写：事实和数字只用原稿里的，按段落分组、段内一句一行，不写动作提示，数字写成念出来的样子。改写时按你在设置里选的风格和写作工作流来写，改写后可以逐句修改。')}</p>
+      <p>{t('事实和数字只用原稿里的，按段落分组、段内一句一行，不写动作提示，数字写成念出来的样子。改写时按你在设置里选的风格和写作工作流来写，改写后可以逐句修改。')}</p>
       <div className="md-vd-row is-center">
-        <button type="button" className="md-btn is-primary is-big" disabled={busy || !connected} onClick={convert}><Icon name="spark" size={16} />{busy ? t('DSH 正在改写…') : t('改写成口播稿')}</button>
+        <button type="button" className="md-btn is-primary is-big" disabled={busy || !connected} onClick={convert}><Icon name="spark" size={16} />{busy ? t('正在改写…') : t('改写成口播稿')}</button>
         <button type="button" className="md-btn" disabled={busy} onClick={onManual}>{t('我自己写')}</button>
       </div>
       {live ? <textarea className="md-vd-script" aria-label={t('口播稿')} value={streamed} readOnly spellCheck={false} /> : null}

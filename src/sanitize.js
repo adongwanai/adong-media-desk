@@ -17,7 +17,7 @@ const MAX_TAG = 16_384
 const CSS_PROPS = new Set([
   'color', 'background', 'background-color', 'background-image', 'background-position', 'background-repeat', 'background-size',
   'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-color', 'border-style', 'border-width', 'border-radius', 'border-collapse', 'border-spacing',
-  'box-shadow', 'box-sizing', 'box-decoration-break', '-webkit-box-decoration-break', 'display', 'gap',
+  'box-shadow', 'box-sizing', 'box-decoration-break', '-webkit-box-decoration-break', 'display', 'gap', 'align-items', 'justify-content',
   'font', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height',
   'list-style', 'list-style-type', 'list-style-position',
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',

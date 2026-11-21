@@ -2,12 +2,13 @@
 // 同言起 YANQI 的 RedView（阿东玩AI，https://github.com/adongwanai/yanqi-obsidian；言起基于 Note to RED，Yeban8090，MIT）。
 // 长稿也要顺：按节缓存切页结果，改了哪节只重切哪节；卡片只在滚到附近时才真正画出来。
 import React from 'react'
-import { dispatchOps, toast, useDesk } from '../desk.js'
+import { auditDraftQuality, autoAnnotateHighlights, HUMANIZE_SKILL_PROMPT, normalizeDraftStructure } from '../../src/draft-quality.js'
+import { dispatchOps, sendChat, setDesk, syncObsidianYanqi, toast, useDesk } from '../desk.js'
 import { lang, t } from '../i18n.js'
 import { Icon } from '../ui.jsx'
 import { cardToPng, copyPng, downloadBlob, inlineImage, measureFits, shrinkImage, zipBlobs } from './card-dom.js'
 import { CONTROL_CSS, attachControls, flashLine } from './card-interact.js'
-import { CARD_LABELS, SAFE_AREA, applyCoverMode, bodyBox, cardContext, cardTitle, checkCover, formatDate, isTemplateCover, packPages, pageAtLine, pageOfKey, paginateSection, planSections, renderCard, sectionHeadings } from './cards.js'
+import { CARD_LABELS, SAFE_AREA, applyCoverMode, bodyBox, cardContext, cardTitle, checkCover, dedupeSectionHeadings, formatDate, isTemplateCover, numberPages, packPages, pageAtLine, pageCharCount, pageOfKey, paginateSection, planSections, renderCard, sectionHeadings } from './cards.js'
 import { BackgroundPicker, CoverPicker, CoverTitleField, Credit, FontControls, PagingPicker, SignatureForm, SizePicker, TemplatePicker, ThemeEditor, ThemeGallery } from './controls.jsx'
 import { parseBlocks } from './markdown.js'
 import { usePrefs, useItemMedia, useSignature } from './prefs.js'
@@ -61,8 +62,8 @@ function sectionKey(section, ctx) {
   return `${body}|${JSON.stringify(sizes)}`
 }
 
-/** 按节切页，结果按节缓存；排版选择变了才全部重切。 */
-function usePages(sections, ctx, layoutKey) {
+/** 按节切页（默认按选定的标题级别与 --- 换页，可选跨节紧凑连排），结果按节缓存；排版选择变了才全部重切。 */
+function usePages(sections, ctx, layoutKey, { compactFlow = false, includeCover = true } = {}) {
   const cache = React.useRef({ layoutKey: null, map: new Map() })
   return React.useMemo(() => {
     if (!sections) return []
@@ -70,16 +71,17 @@ function usePages(sections, ctx, layoutKey) {
     const next = new Map()
     const fits = page => measureFits(page, ctx)
     const pages = []
-    for (const section of sections) {
+    for (const section of dedupeSectionHeadings(sections)) {
       const key = sectionKey(section, ctx)
       let hit = cache.current.map.get(key)
-      if (!hit) hit = { line: section.line ?? 0, pages: paginateSection(section, fits) }
+      if (!hit) hit = { line: section.line ?? 0, pages: paginateSection(section, fits, { repeatHeading: false }) }
       next.set(key, hit)
       pages.push(...shiftLines(hit.pages, (section.line ?? 0) - hit.line))
     }
     cache.current.map = next
-    return packPages(pages, fits)
-  }, [sections, ctx, layoutKey])
+    if (compactFlow) return packPages(pages, fits, { includeCover })
+    return numberPages(pages)
+  }, [sections, ctx, layoutKey, compactFlow, includeCover])
 }
 
 // 舞台左右留白和卡片间距，和 layouts.css 里 .md-yq-stage 的 padding、gap 一致
@@ -109,10 +111,13 @@ function useStageScale(el, overview, height, width) {
 }
 
 const CONTROL_LABELS = () => ({
-  zoom: t('缩放'), zoomIn: t('放大'), zoomOut: t('缩小'), reset: t('复位'), resize: t('拖拽改变图片大小'),
-  imageHint: t('拖动图片调整位置；四角拖拽改大小；Ctrl/⌘ + 滚轮或双指捏合缩放'),
+  zoom: t('缩放'), zoomIn: t('框内放大'), zoomOut: t('框内缩小'), reset: t('复位'),
+  resize: t('等比调整图片大小（不裁剪）'),
+  resizeWidth: t('左右拉缩宽度'),
+  resizeHeight: t('上下拉缩高度'),
+  imageHint: t('按住图片拖动位置；四角等比缩放不裁剪；上下左右边条独立拉缩；右上角 +/− 与滑杆调框内缩放'),
   tableSmaller: t('表格缩小'), tableBigger: t('表格放大'), tableDrag: t('拖拽缩放表格'),
-  pageLimit: t('已到本页底部'), editTitle: t('点击修改封面标题'),
+  pageLimit: t('已达卡片最大尺寸'), editTitle: t('点击修改封面标题'),
 })
 
 /** 安全区示意：左右 8%、上下 10% 的虚线框，底部 15% 是信息流里可能被标题、点赞盖住的地方。只在预览里画。 */
@@ -130,7 +135,7 @@ function SafeArea({ width, height, scale }) {
 /**
  * 一张卡片：放在 shadow root 里，工作台的样式进不去，看到的就是导出的样子。只在滚到附近时才画（虚拟化）。
  */
-const CardFrame = React.memo(function CardFrame({ html, width, height, scale, label, active, flip, flash, cover, safeArea, controls, onSelect, onJump, onCopy, onTitle, root }) {
+const CardFrame = React.memo(function CardFrame({ html, width, height, scale, label, sparse, active, flip, flash, cover, safeArea, controls, onSelect, onJump, onCopy, onTitle, root }) {
   const host = React.useRef(null)
   const shell = React.useRef(null)
   const [near, setNear] = React.useState(false)
@@ -156,7 +161,7 @@ const CardFrame = React.memo(function CardFrame({ html, width, height, scale, la
   const click = (event) => {
     // 图片、表格控件上的操作不算点卡片
     const path = event.nativeEvent.composedPath()
-    if (path.some(node => node?.classList?.contains?.('mdx-ctrl') || node?.classList?.contains?.('mdx-tctrl') || node?.classList?.contains?.('mdx-corner') || node?.classList?.contains?.('mdx-tresize'))) return
+    if (path.some(node => node?.classList?.contains?.('mdx-ctrl') || node?.classList?.contains?.('mdx-tctrl') || node?.classList?.contains?.('mdx-corner') || node?.classList?.contains?.('mdx-edge') || node?.classList?.contains?.('mdx-tresize'))) return
     // 点封面标题：去改卡片自己的封面标题，不跳回正文（标题不在正文里，跳过去也改不了）
     if (cover && onTitle && path.some(node => node?.getAttribute?.('data-slot') === 'title')) {
       onSelect()
@@ -168,13 +173,13 @@ const CardFrame = React.memo(function CardFrame({ html, width, height, scale, la
     onJump(hit ? Number(hit.getAttribute('data-line')) : null)
   }
   return (
-    <figure ref={shell} className={`md-yq-card ${active ? 'is-on' : ''} ${flip ? 'is-flip' : ''}`} role="listitem">
+    <figure ref={shell} className={`md-yq-card ${active ? 'is-on' : ''} ${flip ? 'is-flip' : ''} ${sparse ? 'is-sparse' : ''}`} role="listitem">
       <div className="md-yq-card-hit" role="button" tabIndex={0} aria-label={label} aria-current={active ? 'true' : undefined} style={{ width: width * scale, height: height * scale }} onClick={click} onKeyDown={(event) => { if (event.key === 'Enter') { onSelect(); onJump(null) } }}>
         <div ref={host} className="md-yq-card-host" style={{ width, height, transform: `scale(${scale})` }} />
         {cover && safeArea ? <SafeArea width={width} height={height} scale={scale} /> : null}
         <button type="button" className="md-yq-card-copy" title={t('复制这张图')} aria-label={t('复制这张图')} onClick={(event) => { event.stopPropagation(); onCopy() }}><Icon name="copy" size={13} /></button>
       </div>
-      <figcaption>{label}</figcaption>
+      <figcaption>{label}{sparse ? <span className="md-yq-sparse-badge" title={t('这张卡片字数很少，建议合并进上一节或调整分页')}>{t('字少')}</span> : null}</figcaption>
     </figure>
   )
 })
@@ -187,12 +192,83 @@ const CardFrame = React.memo(function CardFrame({ html, width, height, scale, la
 // 小红书一篇笔记最多 18 张图：切出来的页数超过这个数，就提示改用精简过的图片版
 export const XHS_MAX_PAGES = 18
 
+/** 图文卡片顶部的通用规则质检条：实时检查首页与每页饱满度、加粗高亮、配图信源、去 AI 味、活人感 5 项通用规则。 */
+function CardQualityBar({ quality, onNormalize, onAnnotate, onAutoFix, onFocusCheck }) {
+  const hasBad = quality.hardFailures.length > 0
+  const [open, setOpen] = React.useState(hasBad)
+  React.useEffect(() => {
+    if (hasBad) setOpen(true)
+  }, [hasBad])
+  const stateIcon = state => (state === 'ok' ? '✓' : state === 'bad' ? '!' : '·')
+  return (
+    <div className={`md-yq-qbar ${quality.ok ? 'is-ok' : hasBad ? 'is-bad' : 'is-warn'}`} role="region" aria-label={t('通用规则检查')}>
+      <div className="md-yq-qbar-top">
+        <button type="button" className="md-yq-qbar-toggle" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+          <span className={`md-yq-qbar-dot is-${quality.ok ? 'ok' : hasBad ? 'bad' : 'warn'}`}>{quality.ok ? '✓' : '!'}</span>
+          <b>{t('通用规则检查')}</b>
+          <span className="md-yq-qbar-score">{t('{pass}/{total} 通过', { pass: quality.passCount, total: quality.totalChecks })}</span>
+        </button>
+        <div className="md-yq-qbar-chips">
+          {quality.checks.map(row => (
+            <button
+              key={row.id}
+              type="button"
+              className={`md-yq-qchip is-${row.state}`}
+              title={`${row.label}：${row.detail}`}
+              onClick={() => { setOpen(true); onFocusCheck(row) }}
+            >
+              <i>{stateIcon(row.state)}</i>
+              <span>{t(row.shortLabel)}</span>
+              <em>{row.value}</em>
+            </button>
+          ))}
+        </div>
+        <span className="md-grow" />
+        {quality.canAnnotate && onAnnotate ? (
+          <button type="button" className="md-pill is-small" onClick={onAnnotate} title={t('自动为各节补齐加蓝加粗（**…**）与加黄荧光笔（==…==）重点标注')}>
+            <Icon name="spark" size={12} />{t('一键加蓝加黄')}
+          </button>
+        ) : null}
+        {quality.canNormalize ? (
+          <button type="button" className="md-pill is-small" onClick={onNormalize} title={t('自动合并开头的重复封面短节并移出卡片内的标签墙，立即消除空卡')}>
+            <Icon name="bolt" size={12} />{t('一键清空白卡')}
+          </button>
+        ) : null}
+        {!quality.ok && onAutoFix && quality.fixPrompt ? (
+          <button type="button" className="md-pill is-small is-primary" onClick={onAutoFix} title={t('将未达标的通用规则项发给左侧助手一键修整')}>
+            <Icon name="spark" size={12} />{t('按规则自动修整')}
+          </button>
+        ) : null}
+        <button type="button" className="md-yq-qbar-more" onClick={() => setOpen(v => !v)}>
+          {open ? t('收起') : t('详情')}
+        </button>
+      </div>
+      {open ? (
+        <ul className="md-yq-qbar-list">
+          {quality.checks.map(row => (
+            <li key={row.id} className={`is-${row.state}`} onClick={() => onFocusCheck(row)}>
+              <i className={`md-yq-qbar-dot is-${row.state}`}>{stateIcon(row.state)}</i>
+              <b>{t(row.label)}</b>
+              <span className="md-yq-qbar-detail">{row.detail}</span>
+              {row.excerpt ? <q className="md-yq-qbar-quote">{row.excerpt.slice(0, 44)}</q> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 export function CardsPreview({ production, title, itemId, onSave, mediaKey, overLimit = null }) {
   const [prefs, update] = usePrefs('card')
   const [editorPrefs, setEditorPrefs] = usePrefs('editor')
   const [signature, setSignature] = useSignature()
   const [media, mediaActions] = useItemMedia(mediaKey ?? itemId)
   const custom = useDesk(s => s.state?.layoutThemes) ?? []
+  const currentStyle = useDesk((s) => {
+    const styles = s.state?.styles ?? []
+    return styles.find(r => r.id === s.state?.activeStyleId) ?? styles[0] ?? null
+  })
   const save = React.useMemo(() => onSave ?? articleSaver(itemId), [onSave, itemId])
   const draft = useArticleDraft(production.article ?? '', save)
   const locked = Boolean(editorPrefs.locked)
@@ -214,7 +290,8 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
   ], [production.cover?.src, figures])
   const articleImages = React.useMemo(() => parseBlocks(article).filter(block => block.type === 'image').map(block => block.src), [article])
   const bgSrc = prefs.background?.src
-  const coverSrc = media.cover?.image && isTemplateCover(prefs.cover) ? media.cover.image : null
+  const autoCoverImage = media.cover?.image === undefined ? (coverChoices[0]?.src ?? articleImages[0] ?? null) : media.cover.image
+  const coverSrc = autoCoverImage && isTemplateCover(prefs.cover) ? autoCoverImage : null
   const srcs = React.useMemo(() => [...new Set([...figures.map(figure => figure.src), ...articleImages, ...(coverSrc ? [coverSrc] : []), ...(bgSrc && !bgSrc.startsWith('data:') ? [bgSrc] : [])])], [figures, articleImages, coverSrc, bgSrc])
   const images = useInlinedImages(srcs)
 
@@ -242,15 +319,30 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
       headings,
     })
   }, [prefs, themeId, signature, date, themes, media, bgSrc, images, coverSrc, article, headings])
-  const sections = React.useMemo(() => (sectionsRaw ? applyCoverMode(sectionsRaw, ctx.cover) : null), [sectionsRaw, ctx.cover])
+  const sections = React.useMemo(() => (sectionsRaw ? applyCoverMode(sectionsRaw, ctx.cover, Boolean(prefs.coverOnly)) : null), [sectionsRaw, ctx.cover, prefs.coverOnly])
   // 只有影响排版高度的选择变了才全部重切（图片大小、表格缩放按节算）；封面标题只影响封面那一节，按节缓存就够了
   const { title: _coverTitle, ...coverSlots } = media.cover ?? {}
-  const layoutKey = JSON.stringify([ctx.theme.id, draftTheme?.styles ?? null, ctx.template, ctx.cover, ctx.font, ctx.size, ctx.width, ctx.height, ctx.headingLevel, signature, date, ctx.background?.src?.length ?? 0, coverSlots, lang()])
-  const pages = usePages(sections, ctx, layoutKey)
+  const compactFlow = Boolean(prefs.compactFlow)
+  const includeCover = !isTemplateCover(ctx.cover) && !prefs.coverOnly
+  const layoutKey = JSON.stringify([ctx.theme.id, draftTheme?.styles ?? null, ctx.template, ctx.cover, Boolean(prefs.coverOnly), compactFlow, ctx.font, ctx.size, ctx.width, ctx.height, ctx.headingLevel, signature, date, ctx.background?.src?.length ?? 0, coverSlots, lang()])
+  const pages = usePages(sections, ctx, layoutKey, { compactFlow, includeCover })
   const exportCtx = React.useMemo(() => ({ ...ctx, lines: false }), [ctx])
   const htmls = React.useMemo(() => pages.map(page => renderCard(page, ctx)), [pages, ctx])
   const checks = React.useMemo(() => (pages[0] ? checkCover(pages[0], ctx) : []), [pages, ctx])
   const skipped = React.useMemo(() => (images ? srcs.filter(src => !images.get(src) && src !== bgSrc).map(src => imageName(src, figures.find(figure => figure.src === src)?.caption)) : []), [images, srcs, figures, bgSrc])
+  const renderedPages = React.useMemo(() => (pages.length ? pages.map(page => ({
+    kind: page.kind,
+    line: page.line ?? 0,
+    continued: Boolean(page.continued),
+    blocks: page.blocks ?? [],
+    hasMedia: (page.blocks ?? []).some(b => b.type === 'image' || b.type === 'table' || b.type === 'code'),
+    chars: pageCharCount(page),
+    hasCoverVisual: page.kind === 'cover' && (isTemplateCover(ctx.cover) || headings.length >= 2 || Boolean(ctx.coverData?.image)),
+  })) : null), [pages, ctx.cover, headings.length, ctx.coverData?.image])
+  const quality = React.useMemo(
+    () => (images ? auditDraftQuality(article, { title: shownTitle, goal: 'xhs', style: currentStyle, renderedPages, skippedImages: skipped }) : null),
+    [images, article, shownTitle, currentStyle, renderedPages, skipped]
+  )
   const [current, setCurrent] = React.useState(0)
   const [overview, setOverview] = React.useState(false)
   const [progress, setProgress] = React.useState(0)
@@ -401,6 +493,21 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
     }
   }
 
+  const handleSyncObsidian = async () => {
+    const data = await syncObsidianYanqi()
+    if (data?.signature) setSignature(data.signature)
+    if (data?.cardPrefs) update({ ...data.cardPrefs, coverOnly: false, compactFlow: false })
+    if (data?.synced) toast(t('已从 Obsidian 同步头像、页脚与主题偏好'))
+  }
+  const applyAnnotate = () => {
+    const res = autoAnnotateHighlights(draft.text, { goal: 'xhs', force: true })
+    if (!res.changed) {
+      toast(t('当前稿件已有充足的加蓝加粗与加黄高亮标注'))
+      return
+    }
+    draft.setText(res.text)
+    toast(t('已自动标注 {b} 处加蓝加粗、{m} 处加黄高亮', { b: res.addedBold, m: res.addedMark }))
+  }
   const panel = (
     <>
       {editing ? (
@@ -409,11 +516,16 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
         <ThemeGallery value={prefs.theme} font={prefs.font} custom={custom} onChange={theme => update({ theme })} onEdit={() => setEditing(true)} onDelete={deleteTheme} />
       )}
       <SizePicker ratio={ctx.ratio} tier={prefs.tier} onRatio={ratio => update({ ratio })} onTier={tier => update({ tier })} />
-      <CoverPicker value={ctx.cover} onChange={cover => update({ cover })} slots={media.cover} onSlots={mediaActions.setCover} images={coverChoices} checks={checks} safeArea={prefs.safeArea} onSafeArea={safeArea => update({ safeArea })} fallbackTitle={title} />
+      <CoverPicker value={ctx.cover} onChange={cover => update({ cover })} slots={media.cover} onSlots={mediaActions.setCover} images={coverChoices} checks={checks} safeArea={prefs.safeArea} onSafeArea={safeArea => update({ safeArea })} coverOnly={prefs.coverOnly} onCoverOnly={coverOnly => update({ coverOnly })} fallbackTitle={title} />
       <TemplatePicker value={prefs.template} onChange={template => update({ template })} />
-      <PagingPicker value={ctx.headingLevel} onChange={headingLevel => update({ headingLevel })} />
+      <PagingPicker value={ctx.headingLevel} onChange={headingLevel => update({ headingLevel })} compactFlow={compactFlow} onCompactFlow={val => update({ compactFlow: val })} />
       <BackgroundPicker value={prefs.background} ratio={ctx.ratio} onChange={background => update({ background })} onPick={pickBackground} />
-      <SignatureForm value={signature} onChange={setSignature} onError={message => toast(message, { error: true })} />
+      <SignatureForm
+        value={signature}
+        onChange={setSignature}
+        onSync={handleSyncObsidian}
+        onError={message => toast(message, { error: true })}
+      />
       <Credit />
     </>
   )
@@ -423,6 +535,55 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
     <>
       <CoverTitleField compact value={media.cover?.title} fallback={title} onChange={text => mediaActions.setCover({ title: text })} inputRef={titleInput} />
       <FontControls font={prefs.font} size={prefs.fontSize} onFont={font => update({ font })} onSize={fontSize => update({ fontSize })} />
+      <button
+        type="button"
+        className="md-pill is-small"
+        title={t('自动为文稿补齐加蓝加粗（**…**）与加黄荧光笔（==…==）重点标注')}
+        onClick={applyAnnotate}
+      >
+        <Icon name="spark" size={12} />{t('自动标注重点')}
+      </button>
+      <button
+        type="button"
+        className="md-pill is-small"
+        title={t('从本机 Obsidian 的 note-to-red 插件同步头像、昵称、名言页脚与默认主题')}
+        onClick={handleSyncObsidian}
+      >
+        {t('同步 Obsidian')}
+      </button>
+      {!isTemplateCover(ctx.cover) ? (
+        <button
+          type="button"
+          className={`md-pill is-small ${prefs.coverOnly ? 'is-on' : ''}`}
+          aria-pressed={Boolean(prefs.coverOnly)}
+          title={t('开启后封面只放标题，正文统一从第 2 页开始排，避免封面塞满文字或第 2 页只剩半句尾巴')}
+          onClick={() => update({ coverOnly: !prefs.coverOnly })}
+        >
+          {t('封面只放标题')}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="md-pill is-small"
+        title={t('在光标处插入手动分页符（---），避免一句话被切在两张卡中间')}
+        onClick={() => editorApi.current?.insertBlock('---')}
+      >
+        + {t('分页符')}
+      </button>
+      {itemId ? (
+        <button
+          type="button"
+          className="md-pill is-small"
+          title={t('调用 Humanizer Skill（中文 22 特征 + 结构去 AI 味）对全文精修去 AI 腔，保留事实与配图')}
+          onClick={async () => {
+            await draft.flush()
+            setDesk({ studioDock: true })
+            await sendChat(HUMANIZE_SKILL_PROMPT, { itemId })
+          }}
+        >
+          <Icon name="spark" size={12} />{t('Humanizer 去AI味')}
+        </button>
+      ) : null}
     </>
   )
   const busy = Boolean(progress) || !pages.length
@@ -436,31 +597,69 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
       </button>
     </>
   )
+  const applyNormalize = () => {
+    const norm = normalizeDraftStructure(draft.text, { fallbackTitle: shownTitle, goal: 'xhs' })
+    if (!norm.changed) return
+    if (norm.coverTitle && !media.cover?.title) mediaActions.setCover({ title: norm.coverTitle })
+    draft.setText(norm.body)
+    toast(norm.fixes[0] || t('已自动规整卡片结构'))
+  }
+  const autoFixByAgent = itemId ? async () => {
+    if (!quality?.fixPrompt) return
+    await draft.flush()
+    setDesk({ studioDock: true })
+    await sendChat(quality.fixPrompt, { itemId })
+  } : null
+  const focusQualityCheck = (row) => {
+    if (!pages.length) return
+    const idx = Number.isInteger(row.cardIndex) ? Math.min(row.cardIndex, pages.length - 1) : pageAtLine(pages, row.line ?? 0)
+    select(idx)
+    if (Number.isInteger(row.line)) jump(idx, row.line)
+  }
   const preview = (
     <div ref={stageRef} className={`md-yq-stage ${overview ? 'is-overview' : ''}`} role="list" aria-label={overview ? t('全览') : t('卡片')} style={overview ? { gridTemplateColumns: `repeat(auto-fill, ${Math.round(ctx.width * scale)}px)` } : undefined}>
-      {pages.map((page, i) => (
-        <CardFrame
-          key={i}
-          root={stage}
-          html={htmls[i]}
-          width={ctx.width}
-          height={ctx.height}
-          scale={scale}
-          active={i === at}
-          flip={flip?.index === i ? flip.n : null}
-          flash={flip?.index === i ? flip : null}
-          cover={page.kind === 'cover'}
-          safeArea={prefs.safeArea}
-          controls={controls}
-          label={page.kind === 'cover' ? t('封面') : `${i + 1} / ${pages.length}`}
-          onSelect={() => select(i)}
-          onJump={line => jump(i, line)}
-          onCopy={() => copyOne(i)}
-          onTitle={page.kind === 'cover' ? editTitle : null}
-        />
-      ))}
+      {pages.map((page, i) => {
+        const chars = pageCharCount(page)
+        const sparse = page.kind !== 'cover' && pages.length > 2 && Number.isFinite(chars) && chars > 0 && chars < 58
+        return (
+          <CardFrame
+            key={i}
+            root={stage}
+            html={htmls[i]}
+            width={ctx.width}
+            height={ctx.height}
+            scale={scale}
+            active={i === at}
+            flip={flip?.index === i ? flip.n : null}
+            flash={flip?.index === i ? flip : null}
+            cover={page.kind === 'cover'}
+            safeArea={prefs.safeArea}
+            controls={controls}
+            sparse={sparse}
+            label={page.kind === 'cover' ? t('封面') : `${i + 1} / ${pages.length}`}
+            onSelect={() => select(i)}
+            onJump={line => jump(i, line)}
+            onCopy={() => copyOne(i)}
+            onTitle={page.kind === 'cover' ? editTitle : null}
+          />
+        )
+      })}
     </div>
   )
+  const combinedNotice = (quality && pages.length) || (overLimit && pages.length > XHS_MAX_PAGES) ? (
+    <>
+      {quality && pages.length ? (
+        <CardQualityBar
+          quality={quality}
+          onNormalize={applyNormalize}
+          onAnnotate={applyAnnotate}
+          onAutoFix={autoFixByAgent}
+          onFocusCheck={focusQualityCheck}
+        />
+      ) : null}
+      {overLimit && pages.length > XHS_MAX_PAGES ? overLimit(pages.length) : null}
+    </>
+  ) : null
   return (
     <SplitFrame
       label={t('图文卡片')}
@@ -472,8 +671,10 @@ export function CardsPreview({ production, title, itemId, onSave, mediaKey, over
         </>
       ) : t('正在排版')}
       actions={actions}
-      notice={overLimit && pages.length > XHS_MAX_PAGES ? overLimit(pages.length) : null}
+      notice={combinedNotice}
       panel={panel}
+      editingTheme={editing}
+      onExitTheme={() => { setEditing(false); setDraftTheme(null) }}
       previewBar={quick}
       preview={preview}
       draft={draft}

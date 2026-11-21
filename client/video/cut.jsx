@@ -68,7 +68,7 @@ function useKeyframes(enabled, item, take, keep) {
   return info
 }
 
-function Exporter({ item, take, keep, duration }) {
+function Exporter({ item, take, keep, duration, onFinish }) {
   const [status, setStatus] = React.useState(null)
   const [busy, setBusy] = React.useState(false)
   const [made, setMade] = React.useState(null)
@@ -130,7 +130,14 @@ function Exporter({ item, take, keep, duration }) {
       {made ? (
         <div className="md-vd-made">
           <TakeVideo src={made.src} />
-          <div><b>{t('剪好的视频')}</b><span>{fmtClock(made.seconds)}</span><a className="md-btn is-small" href={made.src} download={`${safeName(item.production.title)}-cut${made.src.slice(made.src.lastIndexOf('.'))}`}><Icon name="save" size={13} />{t('下载')}</a></div>
+          <div>
+            <b>{t('剪好的视频')}</b>
+            <span>{fmtClock(made.seconds)}</span>
+            <div className="md-vd-row">
+              {onFinish ? <button type="button" className="md-btn is-small is-primary" onClick={onFinish}><Icon name="spark" size={13} />{t('去叠字幕合成片')}</button> : null}
+              <a className="md-btn is-small" href={made.src} download={`${safeName(item.production.title)}-cut${made.src.slice(made.src.lastIndexOf('.'))}`}><Icon name="save" size={13} />{t('下载')}</a>
+            </div>
+          </div>
         </div>
       ) : null}
       <h4 className="md-vd-sub">{t('剪辑清单')}</h4>
@@ -167,6 +174,11 @@ function ScriptLines({ rows, removed, onToggle, onPlay, playing }) {
 }
 
 const AUTO = { threshold: DEFAULT_THRESHOLD, minGap: DEFAULT_MIN_GAP, margin: DEFAULT_PAD, minClip: DEFAULT_MIN_CLIP }
+export const CUT_PRESETS = [
+  { id: 'tight', label: '紧凑口播', params: { threshold: -38, minGap: 0.35, margin: 0.08, minClip: 0.25 } },
+  { id: 'natural', label: '自然留气', params: { threshold: DEFAULT_THRESHOLD, minGap: DEFAULT_MIN_GAP, margin: DEFAULT_PAD, minClip: DEFAULT_MIN_CLIP } },
+  { id: 'screen', label: '录屏演示', params: { threshold: -44, minGap: 0.9, margin: 0.2, minClip: 0.2 } },
+]
 const EMPTY_EDIT = { flipped: new Set(), lines: new Set(), manual: [] }
 const FRAME = 1 / 30
 
@@ -202,7 +214,7 @@ function useInspectorWidth() {
   return { width, onPointerDown, onKeyDown }
 }
 
-export function CutTab({ item, takeId, setTakeId, onRecord }) {
+export function CutTab({ item, takeId, setTakeId, onRecord, onFinish }) {
   const takes = (item.production.takes ?? []).filter(row => row.kind !== 'render')
   const take = takes.find(row => row.id === takeId) ?? takes.filter(row => !row.from).at(-1) ?? takes.at(-1)
   const [analysis, setAnalysis] = React.useState({ status: 'idle' })
@@ -425,6 +437,21 @@ export function CutTab({ item, takeId, setTakeId, onRecord }) {
         </section>
         <section className="md-ed-sec">
           <h4 className="md-ed-h">{t('停顿规则')}</h4>
+          <div className="md-cut-presets" role="group" aria-label={t('剪辑节奏预设')}>
+            {CUT_PRESETS.map((preset) => {
+              const active = Object.keys(preset.params).every(k => Math.abs((params[k] ?? 0) - preset.params[k]) < 0.01)
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`md-pill is-small ${active ? 'is-on' : ''}`}
+                  onClick={() => { setParams({ ...preset.params }); setSkip(true) }}
+                >
+                  {t(preset.label)}
+                </button>
+              )
+            })}
+          </div>
           <label className="md-vd-range is-full"><span>{t('静音阈值')}</span><input type="range" min="-60" max="-20" step="1" value={params.threshold} onChange={e => setParam('threshold', Number(e.target.value))} /><b>{params.threshold} dB</b></label>
           <label className="md-vd-range is-full"><span>{t('最短停顿')}</span><input type="range" min="0.2" max="2" step="0.1" value={params.minGap} onChange={e => setParam('minGap', Number(e.target.value))} /><b>{params.minGap.toFixed(1)} s</b></label>
           <label className="md-vd-range is-full"><span>{t('留气口')}</span><input type="range" min="0" max="0.5" step="0.05" value={params.margin} onChange={e => setParam('margin', Number(e.target.value))} /><b>{params.margin.toFixed(2)} s</b></label>
@@ -452,7 +479,7 @@ export function CutTab({ item, takeId, setTakeId, onRecord }) {
           </section>
         ) : null}
         {ready && lines.length ? <ScriptLines rows={lines} removed={edit.lines} onToggle={i => commit({ ...edit, lines: toggled(edit.lines, i) })} onPlay={playSegment} playing={segment} /> : null}
-        {ready ? <Exporter item={item} take={take} keep={keep} duration={analysis.duration} /> : null}
+        {ready ? <Exporter item={item} take={take} keep={keep} duration={analysis.duration} onFinish={onFinish} /> : null}
       </aside>
       <div className="md-ed-timeline">
         {ready ? <Timeline db={analysis.db} duration={analysis.duration} keep={keep} regions={regions} time={time} inPoint={marks.in} outPoint={marks.out} onSeek={seek} onToggle={i => commit({ ...edit, flipped: toggled(edit.flipped, i) })} />

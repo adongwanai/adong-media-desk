@@ -1,6 +1,6 @@
 // 对话栏顶部的灵感卡：这条灵感本身，加一张属性表（体裁、风格、素材、成稿过程），以及唯一的入口「一键成稿」。
 import React from 'react'
-import { addMaterials, cancelProduce, dispatchOps, readPickedMaterials, removeMaterial, runProduce, scanWritingFlow, setDesk, toast, useDesk } from './desk.js'
+import { addMaterials, cancelProduce, dispatchOps, removeMaterial, runProduce, scanWritingFlow, setDesk, toast, uploadAttachment, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Scorecard } from './scorecard.jsx'
 import { StylePicker } from './style-picker.jsx'
@@ -9,10 +9,115 @@ import { Icon } from './ui.jsx'
 import { fmtDate, textLength } from './util.js'
 import { MAX_MATERIALS } from '../src/material-limits.js'
 
+function fmtElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return m > 0 ? `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${r}s`
+}
+
+function shortToolName(name) {
+  const n = String(name ?? '')
+  if (/search|web|fetch|browse|tavily|curl/i.test(n)) return t('联网检索')
+  if (/read|file|pdf|doc|view|cat|glob|grep/i.test(n)) return t('读取资料')
+  if (/bash|exec|run|shell|terminal|node|python/i.test(n)) return t('运行工具')
+  return n || t('调用能力')
+}
+
+function NativeDraftingPanel({ production, live, goal, mode, activeStyleName, fileCount }) {
+  const [now, setNow] = React.useState(Date.now)
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const startedMs = live?.startedAt ?? (production.startedAt ? Date.parse(production.startedAt) : now)
+  const elapsed = fmtElapsed((now - (Number.isFinite(startedMs) ? startedMs : now)) / 1000)
+  const phase = live?.phase || (production.stage === 'connecting' ? 'connecting' : 'waiting')
+  const activity = live?.activity ?? []
+  const busyTool = [...activity].reverse().find(row => row.status === 'running')
+  const words = textLength(live?.text || '')
+  const cardEst = goal === 'xhs' && words > 0 ? Math.max(1, (String(live?.text || '').match(/^##\s+/gm)?.length ?? 0) + 1) : 0
+  const connected = phase !== 'connecting'
+  const researchDone = words > 0 || (phase === 'writing' && activity.length === 0 && Boolean(live?.reply))
+  const researchActive = connected && !researchDone && (phase === 'tool' || phase === 'waiting' || activity.length > 0)
+  const writingActive = words > 0 || phase === 'reasoning' || phase === 'writing'
+
+  const title = goal === 'xhs' ? t('正在生成小红书图文') : goal === 'script' ? t('正在生成口播稿') : t('正在撰写长文')
+  const goalChip = goal === 'xhs' ? t('小红书图文') : goal === 'script' ? t('口播稿') : t('公众号长文')
+  const modeLabel = mode && mode !== 'auto' ? TONE_MODES.find(m => m.value === mode)?.label : null
+
+  const steps = [
+    {
+      label: connected ? t('已连接会话并加载写作风格') : t('正在连接会话与加载个人风格…'),
+      done: connected,
+      active: !connected,
+    },
+    {
+      label: busyTool
+        ? `${shortToolName(busyTool.name)}${activity.length > 1 ? ` · ${t('第 {n} 项', { n: activity.length })}` : '…'}`
+        : activity.length > 0
+          ? t('已读取与检索 {n} 项参考信源', { n: activity.length })
+          : t('解析选题要求与参考资料'),
+      done: researchDone,
+      active: researchActive && !writingActive,
+    },
+    {
+      label: words > 0
+        ? (cardEst > 0 ? t('正在流式撰写 · 已写 {n} 字（第 {c} 张卡）', { n: words, c: cardEst }) : t('正在流式撰写 · 已写 {n} 字', { n: words }))
+        : phase === 'reasoning'
+          ? t('正在构思切入点与段落结构…')
+          : t('撰写正文与分段排版'),
+      done: false,
+      active: writingActive,
+    },
+    {
+      label: goal === 'xhs' ? t('成稿后自动切分卡片与质检') : t('成稿后自动规整版式与自检'),
+      done: false,
+      active: false,
+    },
+  ]
+
+  return (
+    <div className="md-drafting-panel" role="status" aria-live="polite">
+      <div className="md-drafting-head">
+        <span className="md-live-dot" aria-hidden="true" />
+        <b className="md-shimmer">{title}</b>
+        <span className="md-drafting-time">{elapsed}</span>
+        <button type="button" className="md-drafting-cancel" onClick={() => cancelProduce(production.id)}>{t('取消')}</button>
+      </div>
+      <div className="md-drafting-tags">
+        <span>{activeStyleName}</span>
+        <span>{goalChip}</span>
+        {modeLabel ? <span>{t(modeLabel)}</span> : null}
+        {fileCount > 0 ? <span>{t('{n} 份资料', { n: fileCount })}</span> : null}
+      </div>
+      <div className="md-progress-card is-native">
+        {steps.map((step, idx) => (
+          <div key={idx} className={`md-progress-step ${step.done ? 'is-done' : step.active ? 'is-active' : ''}`}>
+            <i>{step.done ? <Icon name="check" size={10} stroke={2.6} /> : null}</i>
+            <span>{step.active ? <span className="md-shimmer">{step.label}</span> : step.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** 进度：放在对话栏里，像助手在汇报。 */
-function ProgressCard({ production, live, settings }) {
+function ProgressCard({ production, live, settings, goal = 'xhs', mode = 'auto', activeStyleName = '', fileCount = 0 }) {
   const running = production.status === 'running'
-  if (production.engine === 'dsh-native') return <div className="md-progress"><p>DSH 原生 Agent · {live?.text ? `正在写 ${textLength(live.text)} 字` : '正在处理选题'}</p><button type="button" className="md-inline-link" onClick={() => cancelProduce(production.id)}>{t('取消')}</button></div>
+  if (production.engine === 'dsh-native') {
+    return (
+      <NativeDraftingPanel
+        production={production}
+        live={live}
+        goal={goal}
+        mode={mode}
+        activeStyleName={activeStyleName}
+        fileCount={fileCount}
+      />
+    )
+  }
   const ready = settings?.imageReady && production.withImages !== false
   const words = textLength(production.article || live?.text || '')
   const visuals = [production.cover, ...(production.images ?? [])].filter(Boolean)
@@ -107,9 +212,10 @@ function FlowProps({ flow }) {
   )
 }
 
-/** 这条灵感带的素材文件：只显示名字和字数，点开才铺开；一次加不了全部内容，正文不进这一栏。 */
+/** 这条灵感带的附件与素材文件：支持任意原生格式（PDF、图片、Office、文本、代码等）。 */
 function MaterialsProp({ item, disabled }) {
   const rows = item.materials ?? []
+  const attachments = item.attachments ?? []
   const [busy, setBusy] = React.useState(false)
   const [paths, setPaths] = React.useState('')
   const [paste, setPaste] = React.useState(false)
@@ -117,9 +223,11 @@ function MaterialsProp({ item, disabled }) {
   const input = React.useRef(null)
   React.useEffect(() => { setPaths(''); setPaste(false); setNote(null) }, [item.id])
   const total = rows.reduce((sum, row) => sum + (row.chars || 0), 0)
-  const add = async ({ files = [], lines = [] }) => {
+  const attNames = new Set(attachments.map(a => a.name))
+  const extraMaterials = rows.filter(r => !attNames.has(r.name))
+  const addLines = async (lines) => {
     setBusy(true)
-    const result = await addMaterials(item.id, { files, paths: lines })
+    const result = await addMaterials(item.id, { files: [], paths: lines })
     setBusy(false)
     if (!result) return
     if (result.errors?.length) setNote(result.errors.map(row => `${row.name}：${row.reason}`).join('；'))
@@ -127,12 +235,36 @@ function MaterialsProp({ item, disabled }) {
     if (result.added?.length) toast(t('加了 {n} 份素材', { n: result.added.length }), { undo: true })
     setPaths('')
   }
+  const uploadFiles = async (fileList) => {
+    const picked = [...(fileList ?? [])].slice(0, 15)
+    if (!picked.length) return
+    setBusy(true)
+    setNote(null)
+    try {
+      for (const file of picked) {
+        await uploadAttachment(file, item.id)
+      }
+      toast(t('已添加 {n} 个附件', { n: picked.length }))
+    } catch (err) {
+      setNote(err.message || String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
-    <Prop label={t('素材')}>
+    <Prop label={t('附件')}>
       <div className="md-materials">
-        {rows.length ? (
+        {attachments.length || extraMaterials.length ? (
           <ul className="md-materials-list">
-            {rows.map(row => (
+            {attachments.map(att => (
+              <li key={att.id} title={att.name}>
+                <Icon name={att.mime?.startsWith('image/') ? 'image' : 'fileText'} size={12} />
+                <span className="md-materials-name">{att.name}</span>
+                <span className="md-materials-chars">{att.bytes ? `${Math.max(1, Math.round(att.bytes / 1024))} KB` : ''}</span>
+                <button type="button" className="md-inline-link" aria-label={t('移除附件')} disabled={disabled || busy} onClick={() => dispatchOps([{ op: 'remove_attachment', id: item.id, attachmentId: att.id }], { label: t('移除附件'), silent: true })}><Icon name="close" size={12} /></button>
+              </li>
+            ))}
+            {extraMaterials.map(row => (
               <li key={row.id} className={row.error ? 'is-error' : ''} title={[row.path || row.name, row.file ? t('超过 2 万字的部分存在工作台的文件目录里，成稿时读全文') : ''].filter(Boolean).join('\n')}>
                 <Icon name="fileText" size={12} />
                 <span className="md-materials-name">{row.name}</span>
@@ -141,23 +273,21 @@ function MaterialsProp({ item, disabled }) {
               </li>
             ))}
           </ul>
-        ) : <span className="md-prop-note">{t('还没有素材。加几份自己的文件，成稿时当成事实来源。')}</span>}
-        {rows.length ? <span className="md-prop-note">{t('共 {n} 份，{chars} 字；成稿时按字数上限挑相关的用。', { n: rows.length, chars: total })}</span> : null}
+        ) : <span className="md-prop-note">{t('支持直接拖入 PDF、图片、文档或代码，由原生会话解析。')}</span>}
+        {rows.length && total ? <span className="md-prop-note">{t('文本合计约 {chars} 字', { chars: total })}</span> : null}
         <div className="md-materials-acts">
-          <button type="button" className="md-link-btn" disabled={disabled || busy || rows.length >= MAX_MATERIALS} onClick={() => input.current?.click()}>{busy ? t('正在读…') : t('加素材文件')}</button>
-          <button type="button" className="md-link-btn" aria-expanded={paste} onClick={() => setPaste(value => !value)}>{paste ? t('收起路径') : t('贴路径')}</button>
-          <input ref={input} type="file" hidden multiple accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={async (e) => {
+          <button type="button" className="md-link-btn" disabled={disabled || busy || attachments.length + extraMaterials.length >= MAX_MATERIALS} onClick={() => input.current?.click()}>{busy ? t('正在上传…') : t('加附件')}</button>
+          <button type="button" className="md-link-btn" aria-expanded={paste} onClick={() => setPaste(value => !value)}>{paste ? t('收起路径') : t('贴本机路径')}</button>
+          <input ref={input} type="file" hidden multiple onChange={(e) => {
             const list = e.target.files
             e.target.value = ''
-            const picked = await readPickedMaterials(list, total)
-            if (picked.errors.length) setNote(picked.errors.map(row => `${row.name}：${row.reason}`).join('；'))
-            if (picked.files.length) await add({ files: picked.files })
+            uploadFiles(list)
           }} />
         </div>
         {paste ? (
           <div className="md-materials-paste">
             <textarea rows={3} value={paths} onChange={e => setPaths(e.target.value)} placeholder={t('一行一个文件路径，比如 /Users/你/Documents/笔记.md')} aria-label={t('素材文件路径')} />
-            <button type="button" className="md-btn is-small" disabled={busy || !paths.trim()} onClick={() => add({ lines: paths.split(/\n+/).map(row => row.trim()).filter(Boolean) })}>{t('读进来')}</button>
+            <button type="button" className="md-btn is-small" disabled={busy || !paths.trim()} onClick={() => addLines(paths.split(/\n+/).map(row => row.trim()).filter(Boolean))}>{t('读进来')}</button>
           </div>
         ) : null}
         {note ? <span className="md-prop-note is-error">{note}</span> : null}
@@ -166,10 +296,10 @@ function MaterialsProp({ item, disabled }) {
   )
 }
 
-// 工作流探测的结果按路径和勾选缓存一份：一次会话里同一份设置不重复扫盘
+// 工作流探测的结果按路径、勾选和目标平台缓存一份：一次会话里同一份设置不重复扫盘
 const flowCache = new Map()
-function useFlowPreview(paths, selected) {
-  const key = JSON.stringify([paths ?? [], selected ?? null])
+function useFlowPreview(paths, selected, target) {
+  const key = JSON.stringify([paths ?? [], selected ?? null, target ?? null])
   const [rows, setRows] = React.useState(() => flowCache.get(key) ?? null)
   React.useEffect(() => {
     const cached = flowCache.get(key)
@@ -178,7 +308,7 @@ function useFlowPreview(paths, selected) {
       return undefined
     }
     let live = true
-    scanWritingFlow({ paths, selected: selected ?? null }).then((found) => {
+    scanWritingFlow({ paths, selected: selected ?? null, target }).then((found) => {
       if (!found.error) flowCache.set(key, found)
       if (live) setRows(found)
     })
@@ -188,10 +318,11 @@ function useFlowPreview(paths, selected) {
 }
 
 /** 成稿前一行说清楚这次会用到什么：灵感本身、几份素材多少字、几份工作流。 */
-function SourcesPreview({ item }) {
+function SourcesPreview({ item, goal }) {
   const settings = useDesk(s => s.settings)
   const paths = settings?.writingFlow?.paths ?? []
-  const found = useFlowPreview(paths, settings?.writingFlow?.selected ?? null)
+  const target = goal === 'xhs' ? 'xhs' : goal === 'script' ? 'script' : 'article'
+  const found = useFlowPreview(paths, settings?.writingFlow?.selected ?? null, target)
   const rows = (item.materials ?? []).filter(row => !row.error)
   const chars = rows.reduce((sum, row) => sum + (row.chars || 0), 0)
   // 工作流按勾选算份数；还没探测完就先不写数字，免得写下 0 又跳
@@ -204,57 +335,210 @@ function SourcesPreview({ item }) {
   )
 }
 
+/** 成稿后的章节大纲：填补左栏留白，点击直达右侧正文或长文预览的对应章节。 */
+function ArticleOutline({ article }) {
+  const headings = React.useMemo(() => {
+    const lines = String(article ?? '').replace(/\r\n?/g, '\n').split('\n')
+    const out = []
+    let inFence = false
+    lines.forEach((line, index) => {
+      if (/^\s*(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return }
+      if (inFence) return
+      const m = /^(#{2,3})\s+(.+?)\s*#*$/.exec(line)
+      if (m) out.push({ level: m[1].length, text: m[2].replace(/[*_`~=]/g, '').trim(), line: index })
+    })
+    return out
+  }, [article])
+  if (headings.length < 2) return null
+  const jumpTo = (row) => {
+    const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    // 先找正文格或长文预览里的标题节点
+    const scroller = document.querySelector('.md-studio .md-article-scroll, .md-studio .md-layout-scroll')
+    if (scroller) {
+      const nodes = [...scroller.querySelectorAll('h2, h3')]
+      const target = nodes.find(el => el.textContent.replace(/\s+/g, '') === row.text.replace(/\s+/g, ''))
+      if (target) {
+        const box = scroller.getBoundingClientRect()
+        const rect = target.getBoundingClientRect()
+        scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + rect.top - box.top - 24), behavior })
+        return
+      }
+    }
+    // 如果当前在图文卡片全览或分栏源码里，滚到带对应行号的块
+    const block = document.querySelector(`.md-studio [data-line="${row.line}"]`)
+    block?.scrollIntoView({ block: 'center', behavior })
+  }
+  return (
+    <details className="md-idea-more md-outline-box" open>
+      <summary>{t('章节大纲')}<span>{headings.length}</span></summary>
+      <ol className="md-outline-list">
+        {headings.map((h, i) => (
+          <li key={`${h.line}:${i}`} className={`is-h${h.level}`}>
+            <button type="button" onClick={() => jumpTo(h)} title={h.text}>{h.text}</button>
+          </li>
+        ))}
+      </ol>
+    </details>
+  )
+}
+
+const TONE_MODES = [
+  { value: 'auto', label: '自动判断' },
+  { value: 'A', label: 'A · 争议判断' },
+  { value: 'B', label: 'B · 故事吐槽' },
+  { value: 'C', label: 'C · 教程路径' },
+  { value: 'D', label: 'D · 真诚分享' },
+]
+
+const TONE_AUDIENCES = [
+  { value: 'auto', label: '自动匹配' },
+  { value: 'user', label: '普通 AI 用户' },
+  { value: 'builder', label: 'OPC 与 Builder' },
+  { value: 'dev', label: '技术开发者' },
+]
+
 export function IdeaCard({ item, live, settings }) {
   const production = item.production
   const running = production?.status === 'running'
   const done = production?.status === 'done'
   const styles = useDesk(s => s.state.styles ?? [])
   const activeId = useDesk(s => s.state.activeStyleId)
+  const hasChat = useDesk(s => s.state.chat.some(m => m.itemId === item.id))
   const [draw, setDraw] = React.useState(null)
   const [goal, setGoal] = React.useState(item.creation?.goal ?? 'xhs')
+  const [mode, setMode] = React.useState(item.creation?.mode ?? 'auto')
+  const [audience, setAudience] = React.useState(item.creation?.audience ?? 'auto')
+  const [thesis, setThesis] = React.useState(item.creation?.thesis ?? '')
   const [starting, setStarting] = React.useState(false)
+  React.useEffect(() => {
+    setDraw(null)
+    setGoal(item.creation?.goal ?? 'xhs')
+    setMode(item.creation?.mode ?? 'auto')
+    setAudience(item.creation?.audience ?? 'auto')
+    setThesis(item.creation?.thesis ?? '')
+  }, [item.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveBrief = (patch) => {
+    if (running) return
+    dispatchOps([{ op: 'set_creation', id: item.id, goal, mode, audience, thesis, ...patch }], { label: t('已保存创作进度'), silent: true })
+  }
+
   const start = async () => {
     setStarting(true)
-    try { await runProduce(item.id, { withImages: goal === 'xhs' ? false : withImages, goal }) } finally { setStarting(false) }
+    try {
+      await runProduce(item.id, { withImages: goal === 'xhs' ? false : withImages, goal, mode, audience, thesis })
+    } finally { setStarting(false) }
   }
-  React.useEffect(() => setDraw(null), [item.id])
   // 单次选择优先，其次沿用这条上次的选择，最后取设置里的默认值；没接生图模型时默认不勾
   const imageReady = Boolean(settings?.imageReady)
   const withImages = draw ?? (!imageReady ? false : production?.withImages !== undefined ? production.withImages : settings?.generateImages !== false)
   const canStart = !production || !['running', 'done'].includes(production.status)
-  return (
-    <section className="md-idea-card" aria-label={t('灵感')}>
-      <span className="md-idea-label">{t('灵感')}<i aria-hidden="true" />{fmtDate(item.createdAt)}</span>
-      <AutoText className="md-idea-text" label={t('灵感')} value={item.title} disabled={running} onCommit={title => dispatchOps([{ op: 'update_item', id: item.id, title }], { label: t('修改灵感'), silent: true })} />
-      <IdeaBody item={item} disabled={running} />
+  const activeStyleName = styles.find(s => s.id === activeId)?.name ?? t('默认风格')
+  const fileCount = new Set([...(item.attachments ?? []).map(a => a.name), ...(item.materials ?? []).map(m => m.name)]).size
 
-      {canStart ? (
-        <div className="md-go-row">
-          <button type="button" className="md-go" disabled={starting} onClick={start}><Icon name="spark" size={15} />{t(starting ? '正在开始…' : goal === 'xhs' ? '生成小红书图文' : goal === 'script' ? '生成口播稿' : '一键成稿')}</button>
-          {goal !== 'xhs' ? <label className="md-go-option">
-            <input type="checkbox" checked={withImages} onChange={e => setDraw(e.target.checked)} />
-            {t('生成图片')}
-          </label> : null}
+  return (
+    <section className={`md-idea-card ${running ? 'is-running' : ''} ${done || hasChat ? 'is-compact' : ''}`} aria-label={t('灵感')}>
+      <span className="md-idea-label">
+        {t('灵感')}<i aria-hidden="true" />{fmtDate(item.createdAt)}
+        <span className={`md-idea-state ${running ? 'is-running' : done ? 'is-done' : ''}`}>
+          {running ? t('正在成稿') : done ? t('已成稿') : t('待成稿')}
+        </span>
+      </span>
+      <AutoText className="md-idea-text" label={t('灵感')} value={item.title} disabled={running} onCommit={title => dispatchOps([{ op: 'update_item', id: item.id, title }], { label: t('修改灵感'), silent: true })} />
+      {!done ? <IdeaBody item={item} disabled={running} /> : null}
+
+      {(item.attachments ?? []).length > 0 ? (
+        <div className="md-idea-att-chips">
+          {item.attachments.map(att => (
+            <span key={att.id} className="md-att-chip" title={att.name}>
+              <Icon name={att.mime?.startsWith('image/') ? 'image' : 'fileText'} size={11} />
+              <span>{att.name}</span>
+              {!running ? (
+                <button type="button" aria-label={t('移除附件')} onClick={() => dispatchOps([{ op: 'remove_attachment', id: item.id, attachmentId: att.id }], { label: t('移除附件'), silent: true })}>
+                  <Icon name="close" size={10} />
+                </button>
+              ) : null}
+            </span>
+          ))}
         </div>
       ) : null}
-      {canStart ? <label className="md-output-choice">{t('生成内容')}<select aria-label={t('生成内容')} value={goal} disabled={starting || running} onChange={event => setGoal(event.target.value)}><option value="xhs">{t('小红书图文卡片')}</option><option value="article">{t('文章')}</option><option value="script">{t('口播稿')}</option></select></label> : null}
 
-      <details className="md-idea-more"><summary>{t('选题评分（可选）')}</summary><Scorecard key={item.id} item={item} /></details>
-      {!running ? (
+      {running ? (
+        <ProgressCard
+          production={{ ...production, id: item.id }}
+          live={live}
+          settings={settings}
+          goal={goal}
+          mode={mode}
+          activeStyleName={activeStyleName}
+          fileCount={fileCount}
+        />
+      ) : null}
+
+      {canStart ? (
+        <>
+          <div className="md-go-row">
+            <button type="button" className="md-go" disabled={starting} onClick={start}><Icon name="spark" size={15} />{t(starting ? '正在开始…' : goal === 'xhs' ? '生成小红书图文' : goal === 'script' ? '生成口播稿' : '一键成稿')}</button>
+            {goal !== 'xhs' ? <label className="md-go-option">
+              <input type="checkbox" checked={withImages} onChange={e => setDraw(e.target.checked)} />
+              {t('生成图片')}
+            </label> : null}
+          </div>
+          <div className="md-tone-bar" aria-label={t('写作定调')}>
+            <div className="md-tone-selects">
+              <label className="md-output-choice">
+                <span>{t('生成内容')}</span>
+                <select aria-label={t('生成内容')} value={goal} disabled={starting || running} onChange={(e) => { const next = e.target.value; setGoal(next); saveBrief({ goal: next }) }}>
+                  <option value="xhs">{t('小红书图文卡片')}</option>
+                  <option value="article">{t('文章')}</option>
+                  <option value="script">{t('口播稿')}</option>
+                </select>
+              </label>
+              <label className="md-output-choice">
+                <span>{t('内容模式')}</span>
+                <select aria-label={t('内容模式')} value={mode} disabled={starting || running} onChange={(e) => { const next = e.target.value; setMode(next); saveBrief({ mode: next }) }}>
+                  {TONE_MODES.map(opt => <option key={opt.value} value={opt.value}>{t(opt.label)}</option>)}
+                </select>
+              </label>
+              <label className="md-output-choice">
+                <span>{t('面向谁')}</span>
+                <select aria-label={t('面向谁')} value={TONE_AUDIENCES.some(o => o.value === audience) ? audience : 'auto'} disabled={starting || running} onChange={(e) => { const next = e.target.value; setAudience(next); saveBrief({ audience: next }) }}>
+                  {TONE_AUDIENCES.map(opt => <option key={opt.value} value={opt.value}>{t(opt.label)}</option>)}
+                </select>
+              </label>
+            </div>
+            <input
+              type="text"
+              className="md-thesis-input"
+              value={thesis}
+              disabled={starting || running}
+              onChange={e => setThesis(e.target.value)}
+              onBlur={() => { if (thesis !== (item.creation?.thesis ?? '')) saveBrief({ thesis }) }}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !starting) { e.preventDefault(); start() } }}
+              placeholder={t('选填：甩一句你最真实的判断、槽点或踩坑结论，整篇顺着这个劲写')}
+              aria-label={t('一句话核心判断')}
+            />
+          </div>
+        </>
+      ) : null}
+
+      <details className="md-idea-more" open={canStart && !hasChat ? true : undefined}>
+        <summary>{t('风格与附件')}{` · ${activeStyleName}${fileCount ? ` · ${t('{n} 份资料', { n: fileCount })}` : ''}`}</summary>
         <dl className="md-props">
           <Prop label={t('风格')}>
-            <StylePicker styles={styles} value={activeId ?? null} label={t('风格')} onChange={id => dispatchOps([{ op: 'set_style', id }], { label: t('切换风格'), silent: true })} />
+            <StylePicker styles={styles} value={activeId ?? null} label={t('风格')} onChange={id => !running && dispatchOps([{ op: 'set_style', id }], { label: t('切换风格'), silent: true })} />
           </Prop>
           <MaterialsProp item={item} disabled={running} />
           {done && production.flow ? <FlowProps flow={production.flow} /> : null}
         </dl>
-      ) : null}
-      {running ? <ProgressCard production={{ ...production, id: item.id }} live={live} settings={settings} /> : null}
+        {!running ? <details className="md-idea-more"><summary>{t('选题评分（可选）')}</summary><Scorecard key={item.id} item={item} /></details> : null}
+      </details>
+
+      {done && !running ? <ArticleOutline article={production?.article} /> : null}
       {production?.status === 'failed' ? <p className="md-idea-hint is-error">{production.error}</p> : null}
       {canStart && !withImages && imageReady ? <p className="md-idea-hint">{t('这次只出文字版，之后仍可以单张补画。')}</p> : null}
-      {/* 没接生图模型时右边已经有一行说明；这里只在勾了「生成图片」时再说清楚这次画不了，不悄悄跳过 */}
       {canStart && !imageReady && withImages ? <p className="md-idea-hint">{t('还没接生图模型，这次画不了图，只出文字。')}<button type="button" onClick={() => setDesk({ settingsOpen: true })}>{t('去接入')}</button></p> : null}
-      {canStart ? <SourcesPreview item={item} /> : null}
+      {canStart && !hasChat ? <SourcesPreview item={item} goal={goal} /> : null}
       {production?.notice ? <p className="md-idea-hint">{production.notice}</p> : null}
     </section>
   )

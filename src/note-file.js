@@ -5,7 +5,11 @@ import { homedir } from 'node:os'
 import { extname, isAbsolute, resolve } from 'node:path'
 import { tr } from './i18n.js'
 
-export const NOTE_EXTS = new Set(['.md', '.markdown', '.txt'])
+export const NOTE_EXTS = new Set([
+  '.md', '.markdown', '.txt', '.json', '.jsonl', '.csv', '.tsv',
+  '.yaml', '.yml', '.toml', '.xml', '.html', '.htm', '.srt', '.vtt', '.log',
+  '.py', '.js', '.mjs', '.ts', '.tsx', '.jsx', '.sh', '.sql',
+])
 export const MAX_NOTE_BYTES = 2_000_000
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
@@ -78,7 +82,11 @@ export async function readNoteFile(rawPath) {
   if (!info.isFile()) throw fail(tr('这是一个文件夹，不是文件'))
   if (info.size > MAX_NOTE_BYTES) throw fail(tr('文件超过 2 MB，先删减一些再读'))
   const raw = await readFile(file, 'utf8').catch(err => { throw fail(tr('读不了这个文件：{reason}', { reason: err.message })) })
-  const { head, body } = splitFrontMatter(raw)
+  const ext = extname(file).toLowerCase()
+  const normalized = (ext === '.html' || ext === '.htm')
+    ? raw.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ')
+    : raw
+  const { head, body } = splitFrontMatter(normalized)
   const content = body.trim()
   if (!content) throw fail(tr('这个文件里没有正文'))
   return { file, title: noteTitle(head, content), body: content, tags: noteTags(head), chars: content.length }

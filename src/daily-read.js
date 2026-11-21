@@ -75,18 +75,29 @@ export function dueRun({ now, last, settings }) {
 }
 
 /**
- * 打开大屏时要不要在后台补读公开接口：自动读取开着、填了主页地址、没在读、距上次读到超过 6 小时（或从没读到过）。纯函数。
- * @param {{now: Date, last?: {publicOkAt?: string, running?: boolean, startedAt?: string}|null, settings?: {enabled?: boolean}, hasLinks: boolean}} input
+ * 打开大屏时要不要在后台补读公开接口：自动读取开着、填了主页地址、没在读、距上次读到超过 maxAgeMs（默认 6 小时，或从没读到过）。纯函数。
+ * @param {{now: Date, last?: {publicOkAt?: string, running?: boolean, startedAt?: string, pid?: number}|null, settings?: {enabled?: boolean}, hasLinks: boolean, maxAgeMs?: number}} input
  */
-export function publicStale({ now, last, settings, hasLinks }) {
+export function publicStale({ now, last, settings, hasLinks, maxAgeMs = PUBLIC_STALE_MS }) {
   if (!hasLinks || settings?.enabled === false || isRunning(last, now)) return false
   const ok = Date.parse(last?.publicOkAt ?? '')
-  return !Number.isFinite(ok) || now - ok > PUBLIC_STALE_MS
+  return !Number.isFinite(ok) || now - ok > maxAgeMs
 }
 
-/** 上一轮是不是还在跑：开始了但没结束，且没超过 STALE_RUN_MS。 */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return true
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return err?.code === 'EPERM'
+  }
+}
+
+/** 上一轮是不是还在跑：开始了但没结束、记了 pid 时那个进程还活着，且没超过 STALE_RUN_MS。 */
 export function isRunning(last, now = new Date()) {
-  return Boolean(last?.running && last.startedAt && now - new Date(last.startedAt) < STALE_RUN_MS)
+  if (!last?.running || !last.startedAt || now - new Date(last.startedAt) >= STALE_RUN_MS) return false
+  return pidAlive(last.pid)
 }
 
 /**
@@ -219,13 +230,13 @@ function lastFollowers(state) {
   return Object.fromEntries(Object.entries(latest).map(([platform, row]) => [platform, row.followers]))
 }
 
-/** 这一轮要读哪些平台的创作后台：要读的平台里、离上次读超过 10 分钟的。 */
-function backstagePlan({ platforms, lastAt = {}, now }) {
+/** 这一轮要读哪些平台的创作后台：force 为真（用户在界面手点立即读取/重试）直接读；否则只读离上次超过 10 分钟的。 */
+function backstagePlan({ platforms, lastAt = {}, now, force = false }) {
   const run = []
   const skipped = []
   for (const platform of platforms) {
     const last = Date.parse(lastAt?.[platform] ?? '')
-    if (Number.isFinite(last) && now - last < MIN_GAP_MS) skipped.push({ platform, reason: tr('距上次读创作后台不到 10 分钟，这次没再打开') })
+    if (!force && Number.isFinite(last) && now - last < MIN_GAP_MS) skipped.push({ platform, reason: tr('距上次读创作后台不到 10 分钟，这次没再打开') })
     else run.push(platform)
   }
   return { run, skipped }
@@ -245,7 +256,7 @@ function backstagePlan({ platforms, lastAt = {}, now }) {
  * @param {{trigger: 'schedule'|'catchup'|'manual'|'refresh'|'retry', scope?: 'full'|'login'|'public', slotAt?: string, platforms?: string[], fetchImpl?: typeof fetch, backstage?: {open: () => Promise<{readPage: Function, close: Function}>, callText: Function, wait?: Function}, now?: () => Date}} options
  * @returns {Promise<{results: Array<object>, state: object, skipped?: string}>} results 里每条带 ok；创作后台没打开的平台另有一条 skipped。
  */
-export async function runAccountRead(store, { trigger, scope = 'full', slotAt, platforms, fetchImpl, backstage, now = () => new Date() }) {
+export async function runAccountRead(store, { trigger, scope = 'full', slotAt, platforms, force = false, fetchImpl, backstage, now = () => new Date() }) {
   const started = now()
   const partial = (trigger === 'manual' || trigger === 'retry') && Array.isArray(platforms)
   // 整轮（不是只读几个平台）才算今天的那一轮，才改 day
@@ -260,10 +271,11 @@ export async function runAccountRead(store, { trigger, scope = 'full', slotAt, p
       const retries = draft.autoRead.retries
       draft.autoRead = { ...draft.autoRead, retries: { ...retries, count: retries.count + 1, at: started.toISOString() } }
     }
-    if (!partial) draft.autoRead = { ...(draft.autoRead ?? {}), ...(whole ? { day: localDay(started) } : {}), running: true, startedAt: started.toISOString() }
+    if (!partial) draft.autoRead = { ...(draft.autoRead ?? {}), ...(whole ? { day: localDay(started) } : {}), running: true, pid: process.pid, startedAt: started.toISOString(), progress: null }
     return null
   }, { undoable: false })
   if (skipped) return { results: [], state: await store.read(), skipped }
+  const undoBefore = trigger === 'manual' && Array.isArray(store.undo) ? JSON.parse(JSON.stringify(await store.read())) : null
   let results = []
   let failure = null
   let skippedRows = []
@@ -271,23 +283,54 @@ export async function runAccountRead(store, { trigger, scope = 'full', slotAt, p
   const backstageAt = {}
   // 读不到时截的页面：平台 → {shot: 文件名, shotError}
   const shots = {}
+  /** 边读边落盘：公开接口或单个平台刚读出数就立刻写进 state，大屏轮询不用傻等整轮跑完。 */
+  const flushRows = async (rowsToFlush, progress = undefined) => {
+    const flushAt = now().toISOString()
+    const incOps = rowsToFlush?.length ? resultOps(rowsToFlush, flushAt, (await store.read()).items) : []
+    if (!incOps.length && progress === undefined) return
+    await store.mutate('', (draft) => {
+      if (incOps.length) applyOps(draft, incOps)
+      if (!partial && draft.autoRead && progress !== undefined) draft.autoRead = { ...draft.autoRead, progress }
+      return draft
+    }, { undoable: false })
+  }
   try {
     const before = await store.read()
+    const support = readSupport()
     const accounts = before.accounts ?? []
     if (scope !== 'login') {
-      results = await readAccounts(partial ? accounts.filter(account => platforms.includes(account.platform)) : accounts, fetchImpl)
+      const targetAccounts = partial
+        ? accounts.filter(account => platforms.includes(account.platform))
+        : scope === 'public'
+          ? accounts.filter(account => support[account.platform]?.readable !== false)
+          : accounts
+      results = await readAccounts(targetAccounts, fetchImpl)
       publicOk = results.some(succeeded)
     }
     if (scope !== 'public' && backstage) {
-      const plan = backstagePlan({ platforms: BACKSTAGE_PLATFORMS.filter(name => !partial || platforms.includes(name)), lastAt: before.autoRead?.backstageAt, now: now() })
+      const plan = backstagePlan({ platforms: BACKSTAGE_PLATFORMS.filter(name => !partial || platforms.includes(name)), lastAt: before.autoRead?.backstageAt, now: now(), force })
       skippedRows = plan.skipped
+      // 公开接口已经读完，接下来要开浏览器跑后台：先把公开接口读到的新数落盘，界面立刻能看到
+      if (plan.run.length) await flushRows(results, { current: plan.run[0], done: 0, total: plan.run.length })
       if (plan.run.length) {
         let rows
         try {
           const browser = await backstage.open()
           try {
             for (const platform of plan.run) backstageAt[platform] = now().toISOString()
-            rows = await readBackstage({ platforms: plan.run, browser, callText: backstage.callText, previous: lastFollowers(before), wait: backstage.wait })
+            rows = await readBackstage({
+              platforms: plan.run,
+              browser,
+              callText: backstage.callText,
+              previous: lastFollowers(before),
+              wait: backstage.wait,
+              onStartPlatform: async (platform, done, total) => {
+                await flushRows([], { current: platform, done, total })
+              },
+              onStep: async (stepRow, done, total) => {
+                await flushRows([stepRow], { current: stepRow.platform, done, total })
+              },
+            })
           } finally {
             await browser.close()
           }
@@ -305,7 +348,17 @@ export async function runAccountRead(store, { trigger, scope = 'full', slotAt, p
   }
   const at = now().toISOString()
   const ops = resultOps(results, at, (await store.read()).items)
-  if (ops.length) await store.mutate(trigger === 'manual' ? tr('自动读取账号数据') : '', draft => (applyOps(draft, ops), draft), { undoable: trigger === 'manual' })
+  if (ops.length) await store.mutate('', draft => (applyOps(draft, ops), draft), { undoable: false })
+  if (undoBefore && ops.length && Array.isArray(store.undo)) {
+    const afterState = JSON.parse(JSON.stringify(await store.read()))
+    afterState.autoRead = undoBefore.autoRead
+    const beforeStr = JSON.stringify(undoBefore)
+    const afterStr = JSON.stringify(afterState)
+    if (afterStr !== beforeStr) {
+      store.undo.push({ label: tr('自动读取账号数据'), before: beforeStr, after: afterStr })
+      if (store.undo.length > 30) store.undo.shift()
+    }
+  }
   const rows = results.map(row => ({ ...resultRow(row), ...(shots[row.platform] ?? {}), at }))
   const state = await store.mutate('', (draft) => {
     const prior = draft.autoRead ?? {}
@@ -317,6 +370,8 @@ export async function runAccountRead(store, { trigger, scope = 'full', slotAt, p
       ...(publicOk ? { publicOkAt: at } : {}),
     }
     const kept = { ...prior, ...marks }
+    delete kept.progress
+    delete kept.pid
     // 整轮换掉全部结果；只读一部分平台、一部分来源的那几轮：新结果换进上一轮的结果里，别的平台照旧
     const next = keepSkipped(whole ? rows : mergeResults(previous, rows), previous, skippedRows)
     // 整轮里既没读、也不是因为 10 分钟内读过才跳过的平台（主页地址删了、后台关了）：不再提醒
@@ -397,6 +452,20 @@ export async function dailyTick({ store, settings, desk, fetchImpl, notifyFetch,
  * @returns {() => void} 停止定时器；插件卸载、热重载时调用。
  */
 export function startDailyRead({ store, settings, desk, fetchImpl, notifyFetch, backstage = () => null, lang = () => 'zh', onError = () => {} }) {
+  // 新进程刚启动时，清理上一次进程意外退出遗留的 running 僵尸锁，避免大屏卡在「正在读取」
+  store.read().then((state) => {
+    const ar = state?.autoRead
+    if (!ar?.running || desk.readingAccounts) return null
+    if (ar.pid && ar.pid !== process.pid && pidAlive(ar.pid)) return null
+    return store.mutate('', (draft) => {
+      if (draft.autoRead?.running) {
+        draft.autoRead = { ...draft.autoRead, running: false }
+        delete draft.autoRead.progress
+        delete draft.autoRead.pid
+      }
+      return draft
+    }, { undoable: false })
+  }).catch(() => {})
   const tick = () => dailyTick({ store, settings, desk, fetchImpl, notifyFetch, backstage, lang }).catch(onError)
   const first = setTimeout(tick, FIRST_TICK_MS)
   const timer = setInterval(tick, TICK_MS)

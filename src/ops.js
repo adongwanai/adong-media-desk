@@ -8,9 +8,10 @@ import { BUILTIN_GROUP_IDS } from './feed-catalog.js'
 import { cleanScoreParts } from './idea-score.js'
 import { cleanWords, MAX_BLOCKED, MAX_TOPICS } from './rank.js'
 import { MAX_LAYOUT_THEMES, validateLayoutTheme } from './layout-theme.js'
+import { cleanCardPrefs, cleanCardSignature } from './obsidian-yanqi.js'
 import { incomeHandlers } from './income.js'
 import { cleanWorkId } from './work-id.js'
-import { CREATION_GOALS } from './creation.js'
+import { cleanCreation, CREATION_GOALS } from './creation.js'
 import { pushSample } from './metric-samples.js'
 
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
@@ -223,15 +224,28 @@ function rivalWork(input) {
   return work
 }
 
+function cleanAttachment(raw, now) {
+  if (!raw || typeof raw !== 'object') return null
+  const file = typeof raw.file === 'string' ? raw.file.trim() : ''
+  if (!/^[\w.-]{1,160}$/.test(file) || file.includes('..')) return null
+  const name = (typeof raw.name === 'string' ? raw.name.trim() : file).slice(0, 160) || file
+  const mime = typeof raw.mime === 'string' ? raw.mime.trim().slice(0, 100) : 'application/octet-stream'
+  const bytes = Number.isFinite(raw.bytes) && raw.bytes >= 0 ? Math.round(raw.bytes) : 0
+  return { id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 60) : newId('att'), name, file, mime, bytes, at: typeof raw.at === 'string' ? raw.at : now }
+}
+
 const handlers = {
   add_item(state, op, now) {
     const fields = pick(ITEM_FIELDS, op)
+    const attachments = Array.isArray(op.attachments) ? op.attachments.map(a => cleanAttachment(a, now)).filter(Boolean).slice(0, 30) : []
     const item = {
       id: newId('it'), kind: 'note', title: '', body: '', tags: [], status: 'idea', personaIds: [], createdAt: now, drafts: {}, ...fields,
+      ...(attachments.length ? { attachments } : {}),
+      ...(op.creation && typeof op.creation === 'object' ? { creation: cleanCreation(op.creation) } : {}),
     }
-    if (!item.title && !item.body && !item.media) throw new Error(tr('灵感内容为空'))
-    // 只贴了图或视频也要有个名字，卡片和回执才有东西可显示
-    if (!item.title) item.title = short(item.body, 28) || (item.media ? tr(item.kind === 'video' ? '{date}的视频' : '{date}的图片', { date: fmtShort(now) }) : '')
+    if (!item.title && !item.body && !item.media && !attachments.length) throw new Error(tr('灵感内容为空'))
+    // 只贴了图、视频或附件也要有个名字，卡片和回执才有东西可显示
+    if (!item.title) item.title = short(item.body, 28) || (attachments[0]?.name ? attachments[0].name.replace(/\.[^.]+$/, '').slice(0, 28) : '') || (item.media ? tr(item.kind === 'video' ? '{date}的视频' : '{date}的图片', { date: fmtShort(now) }) : '')
     // 新灵感落在首屏文字旁边，一眼就能看到，也不会打乱已有布局
     if (!item.pos && !item.parentId) {
       const n = state.items.filter(row => !row.parentId && row.pos).length
@@ -315,18 +329,28 @@ const handlers = {
   set_creation(state, op) {
     const item = findById(state.items, op.id)
     if (item.production?.status === 'running') throw new Error(tr('正在成稿，完成后再修改创作要求'))
-    const next = { ...item.creation }
-    if (CREATION_GOALS.includes(op.goal)) next.goal = op.goal
-    item.creation = next
+    item.creation = cleanCreation(op, item.creation)
     return { text: tr('已保存创作进度'), target: item.id, kind: 'item' }
   },
-  update_production(state, op) {
+  update_production(state, op, now) {
     const item = findById(state.items, op.id)
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
     if (typeof op.title === 'string') item.production.title = op.title.slice(0, 200)
     if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)
     if (typeof op.article === 'string') {
-      item.production.article = op.article.slice(0, 200000)
+      const nextArticle = op.article.slice(0, 200000)
+      const prevArticle = item.production.article ?? ''
+      if (prevArticle && prevArticle !== nextArticle) {
+        const revisions = [...(item.production.revisions ?? [])]
+        const last = revisions.at(-1)
+        const recent = last && op.snapshot !== true && (Date.parse(now) - Date.parse(last.at) < 45_000)
+        if (!recent) {
+          const reason = typeof op.reason === 'string' && op.reason.trim() ? op.reason.trim().slice(0, 32) : (op.by === 'ai' ? 'AI 修改前' : '手动编辑前')
+          revisions.push({ id: newId('hs'), at: now, label: reason, title: item.production.title ?? item.title, article: prevArticle })
+        }
+        item.production.revisions = revisions.slice(-15)
+      }
+      item.production.article = nextArticle
       // 模型（对话）改的正文记成模型稿；作者自己改的留在 article 里，和模型稿一比就知道哪些句子是作者写的
       if (op.by === 'ai') item.production.aiArticle = item.production.article
     }
@@ -720,6 +744,23 @@ const handlers = {
     state.accounts = state.accounts.filter(row => row.id !== op.id)
     return { text: tr('删除账号档案') }
   },
+  add_attachment(state, op, now) {
+    const item = findById(state.items, op.id)
+    const entry = cleanAttachment(op.attachment, now)
+    if (!entry) throw new Error(tr('附件格式无效'))
+    const list = item.attachments ?? []
+    if (list.length >= 30) throw new Error(tr('单条选题最多挂载 30 个附件'))
+    item.attachments = [...list.filter(row => row.file !== entry.file), entry]
+    return { text: tr('已挂载附件「{name}」', { name: short(entry.name, 18) }), target: item.id, kind: 'item' }
+  },
+  remove_attachment(state, op) {
+    const item = findById(state.items, op.id)
+    const prev = item.attachments ?? []
+    const found = prev.find(row => row.id === op.attachmentId)
+    if (!found) return null
+    item.attachments = prev.filter(row => row.id !== op.attachmentId)
+    return { text: tr('已移除附件「{name}」', { name: short(found.name, 18) }), target: item.id, kind: 'item' }
+  },
   // 排版的「我的主题」：结构和 CSS 属性按内置主题校验，见 layout-theme.js
   save_layout_theme(state, op) {
     const theme = validateLayoutTheme(op.theme)
@@ -734,6 +775,15 @@ const handlers = {
     if (!theme) throw new Error(tr('找不到这套主题'))
     state.layoutThemes = state.layoutThemes.filter(row => row.id !== op.id)
     return { text: tr('删除排版主题「{name}」', { name: theme.name }) }
+  },
+  save_card_profile(state, op) {
+    if (op.signature && typeof op.signature === 'object') {
+      state.cardSignature = cleanCardSignature({ ...(state.cardSignature ?? {}), ...op.signature })
+    }
+    if (op.prefs && typeof op.prefs === 'object') {
+      state.cardPrefs = { ...(state.cardPrefs ?? {}), ...cleanCardPrefs(op.prefs) }
+    }
+    return { text: tr('已保存卡片署名与排版偏好') }
   },
   // 收入：记一笔、删一笔，见 income.js
   ...incomeHandlers(newId),

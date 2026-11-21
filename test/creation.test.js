@@ -26,6 +26,7 @@ const finish = async producer => {
   assert.equal(producer.jobs.size, 0)
 }
 
+
 test('一句选题直接生成图文：不填结构，不等策划、生图和第二轮改写；流式进度可见', async () => {
   const state = fixture(), calls = []
   let release, started
@@ -57,6 +58,7 @@ test('一句选题直接生成图文：不填结构，不等策划、生图和�
   assert.match(calls[0].system, /自然段/)
 })
 
+
 test('图文模型失败显式失败，不把占位大纲冒充成稿', async () => {
   const state = fixture()
   const producer = harness(state, async () => { throw new Error('模型连接失败') })
@@ -66,6 +68,7 @@ test('图文模型失败显式失败，不把占位大纲冒充成稿', async ()
   assert.equal(state.items[0].production.article, '')
   assert.match(state.items[0].production.error, /模型连接失败/)
 })
+
 
 test('只从显式工作区加载文风，不提前展开原生技能全文', async () => {
   const home = await mkdtemp(join(tmpdir(), 'desk-context-'))
@@ -86,4 +89,67 @@ test('只从显式工作区加载文风，不提前展开原生技能全文', as
     for (const expected of ['工作区写作规则', '文风要求']) assert.ok(calls[0].system.includes(expected))
     assert.ok(!calls[0].system.includes('不应自动读取的个人技能'))
   } finally { await rm(home, { recursive: true, force: true }) }
+})
+
+test('口播导入使用独立稿件，原文章和选题身份保持不变', () => {
+  const state = fixture(), item = state.items[0]
+  item.production = { status: 'done', format: 'article', title: '标题', article: '原文章。' }
+  const result = applyOps(state, [{ op: 'update_video', id: item.id, spoken: '可录制的口播稿。' }])
+  assert.equal(result.errors.length, 0)
+  assert.equal(item.production.article, '原文章。')
+  assert.equal(scriptOf(item.production), '可录制的口播稿。')
+})
+
+
+test('逐字显示只展开已收到的文本，保留段落和完整 Unicode，改写不留下旧内容', () => {
+  const target = '第一段🙂。\n\n第二段。'
+  let current = ''
+  for (let i = 0; i < 50 && current !== target; i++) {
+    current = advanceStream(current, target, true)
+    assert.ok(target.startsWith(current))
+    assert.ok(!/[\uD800-\uDBFF]$/.test(current))
+  }
+  assert.equal(current, target)
+  assert.equal(advanceStream(current, '修改后的正文。', true), '修改后的正文。')
+  assert.equal(advanceStream('', target, false), target)
+})
+
+
+test('用户明确选择的长 Skill 完整读取，目标平台不会覆盖用户的勾选', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'community-long-skill-'))
+  try {
+    const path = join(home, 'SKILL.md')
+    const text = `${'规则段落。\n\n'.repeat(1600)}结尾正反例对照`
+    await writeFile(path, text)
+    const flow = await loadFlow({ writingFlow: { paths: [path], selected: [path] } }, { home, target: 'xhs' })
+    assert.equal(flow.parts.length, 1)
+    assert.ok(flow.parts[0].chars > 10000)
+    assert.equal(flow.parts[0].truncated, false)
+    assert.match(flow.parts[0].text, /结尾正反例对照/)
+    const empty = await loadFlow({ writingFlow: { paths: [path], selected: [] } }, { home, target: 'xhs' })
+    assert.equal(empty.parts.length, 0)
+  } finally { await rm(home, { recursive: true, force: true }) }
+})
+
+test('写作定调（模式 A-D、面向谁、一句话核心判断）在成稿启动时完整保留并注入 author-brief', async () => {
+  const state = fixture(), calls = []
+  state.items[0].creation = { requirements: '必须写清失败边界' }
+  const producer = harness(state, async options => {
+    calls.push(options)
+    return { text: '# 标题\n\n正文内容。', model: 'test' }
+  })
+  await producer.start('topic', { goal: 'xhs', mode: 'A', audience: 'builder', thesis: '真正拉开差距的不是模型跑分，是责任域谁来兜底' })
+  await finish(producer)
+  assert.deepEqual(state.items[0].creation, {
+    goal: 'xhs',
+    mode: 'A',
+    audience: 'builder',
+    thesis: '真正拉开差距的不是模型跑分，是责任域谁来兜底',
+    requirements: '必须写清失败边界',
+  })
+  assert.match(calls[0].user, /<author-brief>/)
+  assert.match(calls[0].user, /A 争议判断型/)
+  assert.match(calls[0].user, /OPC 与产品 Builder/)
+  assert.match(calls[0].user, /责任域谁来兜底/)
+  assert.match(calls[0].user, /必须写清失败边界/)
 })

@@ -111,3 +111,40 @@
 /* 图片版那一行的说明和三个计数：窄的时候计数换到下一行，说明不被挤成一字一行 */
 .md-ver-label.md-pair-label { flex-wrap: wrap; row-gap: 2px; }
 .md-ver-label.md-pair-label > span:first-child { flex: 1 1 14em; min-width: 0; }
+
+/* 平台版本分栏母稿对照 */
+.md-ver-workspace.has-source { display: grid; grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr); gap: 16px; align-items: start; }
+.md-ver-source { position: sticky; top: 12px; max-height: calc(100vh - 140px); display: flex; flex-direction: column; border: .5px solid var(--line-strong); border-radius: var(--r-lg); background: var(--card); overflow: hidden; }
+.md-ver-source > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: .5px solid var(--line); font-size: 13px; }
+.md-ver-source-body { padding: 14px 18px; overflow-y: auto; font-size: 13.5px; line-height: 1.72; }
+.md-ver-grid.is-single { grid-template-columns: minmax(0, 820px); }
+@media (max-width: 980px) { .md-ver-workspace.has-source { grid-template-columns: 1fr; } .md-ver-source { position: static; max-height: 300px; } }
+
+/* X (Twitter) 串推气泡编辑器 */
+.md-x-thread { display: flex; flex-direction: column; gap: 0; padding: 10px 12px; border: .5px solid var(--line-strong); border-radius: var(--r-md); background: var(--bg); }
+.md-x-post { display: flex; gap: 10px; padding: 6px 0; }
+.md-x-rail { display: flex; flex-direction: column; align-items: center; width: 28px; flex: none; }
+.md-x-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 700; flex: none; }
+.md-x-line { flex: 1; width: 2px; min-height: 14px; margin: 4px 0 -6px; background: var(--line-strong); border-radius: 2px; }
+.md-x-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.md-x-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.md-x-main textarea { width: 100%; padding: 8px 10px; border: .5px solid var(--line); border-radius: var(--r-sm); background: var(--card); color: var(--ink); font-size: 13.5px; line-height: 1.55; resize: vertical; }
+.md-x-post.is-over .md-x-main textarea { border-color: var(--danger); }
+.md-x-foot { display: flex; align-items: center; font-size: 12px; }
+
+/* 小红书双列发现流模拟预览 */
+.md-xhs-sim { border: .5px solid var(--line); border-radius: var(--r-md); padding: 8px 12px; background: var(--bg); }
+.md-xhs-sim summary { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--ink2); list-style: none; }
+.md-xhs-sim summary::-webkit-details-marker { display: none; }
+.md-xhs-sim summary .md-muted { margin-left: auto; font-weight: 400; font-size: 12px; }
+.md-xhs-feed { display: grid; grid-template-columns: repeat(2, minmax(0, 178px)); gap: 10px; margin-top: 10px; justify-content: start; }
+.md-xhs-feed-card { border-radius: 10px; overflow: hidden; background: var(--card); border: .5px solid var(--line); display: flex; flex-direction: column; }
+.md-xhs-feed-card.is-peer { opacity: .58; filter: grayscale(.85); }
+.md-xhs-feed-cover { position: relative; aspect-ratio: 3 / 4; background: var(--hover); overflow: hidden; display: grid; place-items: center; }
+.md-xhs-feed-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.md-xhs-feed-cover b { position: absolute; inset: auto 10px 14px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,.58); color: #fff; font-size: 13px; line-height: 1.35; text-align: left; }
+.md-xhs-feed-cover.is-placeholder span { font-size: 12px; color: var(--ink3); }
+.md-xhs-feed-title { margin: 8px 9px 6px !important; font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 35px; }
+.md-xhs-feed-meta { display: flex; align-items: center; justify-content: space-between; padding: 0 9px 8px; font-size: 11px; color: var(--ink3); }
+.md-xhs-feed-user { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-xhs-feed-user i { width: 14px; height: 14px; border-radius: 50%; background: var(--line-strong); flex: none; }

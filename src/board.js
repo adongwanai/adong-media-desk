@@ -92,6 +92,8 @@ function snapshotOf(rows, platform, today) {
  */
 function autoPart(platform, account, last, snapshot, autoRead) {
   const run = (autoRead?.results ?? []).find(row => row.platform === platform)
+  const hasBackstage = last?.source === 'backstage' || snapshot?.source === 'backstage'
+  const ignorePublicBlocked = hasBackstage && run && !run.ok && !run.source
   return {
     url: account?.url ?? null,
     fetchedAt: last?.fetchedAt ?? null,
@@ -100,7 +102,7 @@ function autoPart(platform, account, last, snapshot, autoRead) {
     latestPost: snapshot?.latest ?? null,
     topPost: snapshot?.top ?? null,
     // 原因按读的那一刻的语言记下；换了语言后，认得的原因再翻一次
-    readError: run && !run.ok && run.error ? tr(run.error) : null,
+    readError: run && !run.ok && !ignorePublicBlocked && run.error ? tr(run.error) : null,
     readAt: run ? autoRead.at ?? null : null,
     // 这一轮从哪读的：backstage 是创作后台（卡片上「读于…」处标明）
     readVia: run?.source ?? null,
@@ -336,6 +338,7 @@ export function computeBoard(state, now = new Date()) {
       platforms: fanCards.length,
       known: Object.fromEntries(totalKeys.map(key => [key, knownOf(key)])),
       partial: Object.fromEntries(totalKeys.map(key => [key, knownOf(key) > 0 && knownOf(key) < fanCards.length])),
+      approx: fanCards.some(card => card.followers !== null && card.followers !== undefined && card.followersApprox),
     },
     daily,
     platforms: cards,

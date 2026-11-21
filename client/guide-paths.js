@@ -11,7 +11,7 @@
 
 export const GUIDE_ACTIONS = ['capture', 'import', 'author', 'income', 'piece']
 // 成稿页的视图，和 studio.jsx 的 SHEET_VIEWS 一致
-export const SHEET_LAYOUTS = ['draft', 'wechat', 'xhs', 'spoken', 'versions']
+export const SHEET_LAYOUTS = ['draft', 'wechat', 'xhs', 'spoken', 'video', 'versions']
 
 export const GUIDE_PATHS = [
   {
@@ -72,7 +72,7 @@ export const GUIDE_PATHS = [
     title: '做一条口播视频',
     hint: '一篇成稿，六步出片',
     steps: [
-      { text: '打开成稿的「口播内容」，改写或粘贴口播稿，点「导入视频工作台」。原正文会保留。', go: { view: 'home' } },
+      { text: '打开成稿的「口播内容」，改写或粘贴口播稿，点「打开提词器开录」。原正文会保留。', go: { view: 'home' } },
       { text: '到「视频」页，点左上角的标题换成要做的那篇。「稿子」里调语速和目标时长，逐句改到念着顺。', go: { view: 'video', tab: 'script' } },
       { text: '「录制」：打开摄像头或者录屏，跟着提词念。手机拍好的也能直接上传。', go: { view: 'video', tab: 'record' } },
       { text: '「粗剪」找出说话之间的停顿，一键去掉；「字幕」按口播稿生成，对一下时间。', go: { view: 'video', tab: 'cut' } },

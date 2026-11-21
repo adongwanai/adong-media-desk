@@ -1,7 +1,7 @@
 // 信息源：订阅公开的 RSS / Atom，拉回最新条目，挑中的一键记成灵感。条目都来自订阅源本身，工作台不改写也不补内容。
 import React from 'react'
 import { BuiltinGroups, FeedCatalog, useBuiltin } from './catalog.jsx'
-import { dispatchOps, fetchFeeds, sourceSnapshots, useDesk } from './desk.js'
+import { captureUrl, dispatchOps, fetchFeeds, fetchMorningBrief, sourceSnapshots, useDesk } from './desk.js'
 import { FocusBar, RankBar, useFocusRank, Why } from './focus.jsx'
 import { HotView } from './hot.jsx'
 import { plural, t, useLang } from './i18n.js'
@@ -15,6 +15,73 @@ function hostOf(url) {
 // 订阅和内置来源混排时，热度只在同一个来源里比
 const bySource = entry => entry.source
 const PAGE = 60
+
+/** Folo / TrendRadar 式「今日选题早报」：把几百条订阅和热榜浓缩成 5 张带切入角度的选题卡。 */
+function MorningBrief({ savedUrls }) {
+  const [brief, setBrief] = React.useState(() => sourceSnapshots.brief ?? null)
+  const [loading, setLoading] = React.useState(false)
+  const [open, setOpen] = React.useState(true)
+  const generate = async () => {
+    setLoading(true)
+    setOpen(true)
+    try {
+      setBrief(await fetchMorningBrief())
+    } finally {
+      setLoading(false)
+    }
+  }
+  const savePick = async (pick) => {
+    await dispatchOps([{
+      op: 'add_item',
+      kind: 'web',
+      title: pick.title,
+      body: [pick.angle ? `切入建议：${pick.angle}` : '', pick.summary].filter(Boolean).join('\n\n'),
+      url: pick.url,
+      source: pick.source,
+    }], { label: t('记下早报选题') })
+  }
+  return (
+    <section className="md-brief-radar" aria-label={t('今日选题早报')}>
+      <div className="md-brief-radar-head">
+        <span className="md-brief-radar-title"><Icon name="spark" size={14} /><b>{t('AI 今日选题早报')}</b></span>
+        <span className="md-muted">{t('聚合已缓存的订阅、内置源与 10 大热榜，挑出 5 个今天最值得写的切入角度')}</span>
+        <span className="md-grow" />
+        {brief?.picks?.length ? (
+          <button type="button" className="md-link-btn" onClick={() => setOpen(v => !v)}>{open ? t('收起') : t('展开 ({n})', { n: brief.picks.length })}</button>
+        ) : null}
+        <button type="button" className="md-btn is-small is-primary" disabled={loading} onClick={generate}>
+          <Icon name={brief ? 'refresh' : 'spark'} size={13} />
+          {loading ? t('正在提炼…') : brief ? t('重新提炼') : t('生成今日 5 个选题')}
+        </button>
+      </div>
+      {open && brief?.picks?.length ? (
+        <ol className="md-brief-radar-grid">
+          {brief.picks.map((pick, i) => {
+            const kept = savedUrls.has(pick.url)
+            return (
+              <li key={`${pick.url}:${i}`} className="md-brief-radar-card">
+                <div className="md-brief-radar-top">
+                  <span className="md-brief-radar-no">0{i + 1}</span>
+                  <span className="md-brief-radar-src">{pick.source}</span>
+                  <span className="md-grow" />
+                  {kept ? (
+                    <span className="md-s-kept"><Icon name="check" size={12} />{t('已记下')}</span>
+                  ) : (
+                    <button type="button" className="md-pill is-small" onClick={() => savePick(pick)}><Icon name="plus" size={12} />{t('记为灵感')}</button>
+                  )}
+                </div>
+                <a href={pick.url} target="_blank" rel="noreferrer noopener" className="md-brief-radar-h">{pick.title}</a>
+                {pick.angle ? <p className="md-brief-radar-angle">{pick.angle}</p> : null}
+              </li>
+            )
+          })}
+        </ol>
+      ) : open && brief && !brief.picks?.length ? (
+        <p className="md-muted md-brief-radar-empty">{t('当前缓存里还没有条目，先点右侧抓取一次订阅或热榜再试。')}</p>
+      ) : null}
+    </section>
+  )
+}
 
 export function SourcesView() {
   useLang()
@@ -60,7 +127,10 @@ export function SourcesView() {
     if (result && !result.errors?.length) setUrl('')
   }
   const saved = new Set(items.map(item => item.url).filter(Boolean))
-  const keep = entry => dispatchOps([{ op: 'add_item', kind: 'web', title: entry.title, body: entry.summary, url: entry.url, source: entry.author ? `${entry.source} · ${entry.author}` : entry.source }], { label: t('记下灵感') })
+  const keep = async (entry) => {
+    const id = await captureUrl(entry.url, { title: entry.title, note: entry.summary, silentError: true })
+    if (!id) await dispatchOps([{ op: 'add_item', kind: 'web', title: entry.title, body: entry.summary, url: entry.url, source: entry.author ? `${entry.source} · ${entry.author}` : entry.source }], { label: t('记下灵感') })
+  }
   const tabs = <Segmented label={t('信息源')} value={tab} onChange={setTab} options={[{ value: 'feeds', label: t('订阅') }, { value: 'hot', label: t('热榜') }]} />
   if (tab === 'hot') {
     return (
@@ -74,6 +144,7 @@ export function SourcesView() {
           {tabs}
         </div>
         <FocusBar />
+        <MorningBrief savedUrls={saved} />
         <HotView />
       </div>
     )
@@ -91,6 +162,7 @@ export function SourcesView() {
         {tabs}
       </div>
       <FocusBar />
+      <MorningBrief savedUrls={saved} />
       {/* 来源管理收成一行摘要，条目尽量靠上；还没有任何来源时直接展开 */}
       <div className="md-s-bar">
         <button type="button" className="md-s-manage" aria-expanded={managing} aria-controls="md-s-sources" onClick={() => setManaging(value => !value)}>

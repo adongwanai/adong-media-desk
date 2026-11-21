@@ -32,7 +32,7 @@ function cleanAmount(raw) {
   return Math.round(amount * 100) / 100
 }
 
-/** 给 ops.js 用的操作：记一笔、删一笔。 */
+/** 给 ops.js 用的操作：记一笔、改一笔、删一笔。 */
 export function incomeHandlers(newId) {
   return {
     add_income(state, op, now) {
@@ -44,6 +44,22 @@ export function incomeHandlers(newId) {
       const row = { id: newId('in'), date, amount, source, ...(item ? { itemId: item.id } : {}), ...(note ? { note } : {}), createdAt: now }
       state.income = [...(state.income ?? []), row]
       return { text: tr('记一笔收入 ¥{amount}（{source}）', { amount: amount.toLocaleString('en-US'), source: tr(source) }), target: row.id, kind: 'income' }
+    },
+    update_income(state, op, now) {
+      const list = state.income ?? []
+      const index = list.findIndex(entry => entry.id === op.id)
+      if (index < 0) throw new Error(tr('找不到这笔收入'))
+      const prev = list[index]
+      const amount = op.amount === undefined ? prev.amount : cleanAmount(op.amount)
+      const date = op.date === undefined ? prev.date : incomeDate(op.date, now)
+      const source = op.source === undefined ? prev.source : (INCOME_SOURCES.includes(op.source) ? op.source : '其他')
+      const item = op.itemId === undefined
+        ? (prev.itemId ? (state.items ?? []).find(row => row.id === prev.itemId) ?? { id: prev.itemId } : null)
+        : (typeof op.itemId === 'string' && op.itemId ? (state.items ?? []).find(row => row.id === op.itemId) : null)
+      const note = op.note === undefined ? (prev.note ?? '') : (typeof op.note === 'string' ? op.note.trim().slice(0, MAX_NOTE) : '')
+      const next = { id: prev.id, date, amount, source, ...(item ? { itemId: item.id } : {}), ...(note ? { note } : {}), createdAt: prev.createdAt }
+      state.income = list.map((entry, i) => (i === index ? next : entry))
+      return { text: tr('修改收入 ¥{amount}（{source}）', { amount: amount.toLocaleString('en-US'), source: tr(source) }), target: next.id, kind: 'income' }
     },
     delete_income(state, op) {
       const list = state.income ?? []

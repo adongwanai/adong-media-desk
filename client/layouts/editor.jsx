@@ -2,8 +2,53 @@
 // 文本框自己不滚动，高度跟着内容长；外面一层负责滚动。光标位置用一个看不见的「镜像」排版量出来：
 // 镜像和文本框同宽同字体，每一行原文是一个块，量块的位置就知道第几行在哪、光标在哪。
 import React from 'react'
+import { toast, uploadAttachment } from '../desk.js'
 import { t } from '../i18n.js'
 import { lineAt, offsetOfLine } from './markdown.js'
+
+const IMAGE_NAME_RE = /\.(png|jpe?g|webp|gif)$/i
+
+function isImageFileLike(file) {
+  if (!file) return false
+  return /^image\//i.test(file.type || '') || IMAGE_NAME_RE.test(file.name || '')
+}
+
+function inferImageMime(name = '', fallback = 'image/png') {
+  const lower = String(name).toLowerCase()
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.png')) return 'image/png'
+  return fallback
+}
+
+export function clipboardImageFiles(transfer) {
+  if (!transfer) return []
+  const fromItems = Array.from(transfer.items ?? [])
+    .filter(it => it.kind === 'file')
+    .map(it => it.getAsFile())
+    .filter(isImageFileLike)
+  if (fromItems.length) return fromItems
+  return Array.from(transfer.files ?? []).filter(isImageFileLike)
+}
+
+export function normalizePastedImage(file, idx = 0) {
+  const rawName = String(file.name || '').trim()
+  const mime = (/^image\//i.test(file.type || '') ? file.type : inferImageMime(rawName)).toLowerCase()
+  const ext = mime.includes('jpeg') || mime.includes('jpg') ? '.jpg'
+    : mime.includes('webp') ? '.webp'
+      : mime.includes('gif') ? '.gif'
+        : '.png'
+  const hasExt = IMAGE_NAME_RE.test(rawName)
+  if (rawName && rawName !== 'image.png' && rawName !== 'blob' && hasExt) {
+    const ensured = file.type ? file : (typeof File === 'function' ? new File([file], rawName, { type: mime }) : file)
+    return { file: ensured, alt: rawName.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || t('配图') }
+  }
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(8, 14)
+  const name = `paste-${stamp}${idx ? `-${idx + 1}` : ''}${ext}`
+  const wrapped = typeof File === 'function' ? new File([file], name, { type: mime }) : Object.assign(file, { name })
+  return { file: wrapped, alt: t('配图') }
+}
 
 const MIRROR_PROPS = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize', 'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'borderLeftWidth', 'borderRightWidth', 'boxSizing', 'wordBreak', 'overflowWrap']
 
@@ -30,12 +75,14 @@ function measureLines(mirror, textarea, value) {
  * @param {object} props - value, onChange(text), onCaret(line) 光标换行时（已防抖），lineNumbers, typewriter, label, apiRef。
  *   apiRef.current = { goto(line) 跳到某行并闪一下, focus() }。
  */
-export function SourceEditor({ value, onChange, onCaret, lineNumbers, typewriter, label, apiRef, onBlur }) {
+export function SourceEditor({ value, onChange, onCaret, onSelection, lineNumbers, typewriter, label, apiRef, onBlur }) {
   const scroller = React.useRef(null)
   const area = React.useRef(null)
+  const fileInput = React.useRef(null)
   const mirror = React.useRef(null)
   const [rows, setRows] = React.useState([])
   const [flash, setFlash] = React.useState(null)
+  const [dropping, setDropping] = React.useState(false)
   const rowsRef = React.useRef(rows)
   rowsRef.current = rows
   const caretLine = React.useRef(-1)
@@ -93,11 +140,71 @@ export function SourceEditor({ value, onChange, onCaret, lineNumbers, typewriter
     el.scrollTop = Math.max(0, box.top - el.clientHeight / 2 + box.height / 2)
   }
 
+  const savedRange = React.useRef(null)
+
+  const insertBlockAtCursor = React.useCallback((snippet, rangeOverride = null) => {
+    const el = area.current
+    if (!el) return
+    const curVal = el.value
+    const start = Math.min(curVal.length, rangeOverride?.start ?? el.selectionStart ?? curVal.length)
+    const end = Math.min(curVal.length, rangeOverride?.end ?? el.selectionEnd ?? start)
+    const before = curVal.slice(0, start)
+    const after = curVal.slice(end)
+    const padBefore = !before ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
+    const padAfter = !after ? '\n' : after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n'
+    const chunk = `${padBefore}${snippet}${padAfter}`
+    const expected = before + chunk + after
+    el.focus({ preventScroll: true })
+    el.setSelectionRange(start, end)
+    let insertedByCmd = false
+    try {
+      insertedByCmd = document.execCommand('insertText', false, chunk) && el.value === expected
+    } catch {
+      insertedByCmd = false
+    }
+    onChange(expected)
+    const nextPos = before.length + padBefore.length + snippet.length
+    requestAnimationFrame(() => {
+      if (!area.current) return
+      if (!insertedByCmd && area.current.value !== expected) area.current.value = expected
+      area.current.focus({ preventScroll: true })
+      area.current.setSelectionRange(nextPos, nextPos)
+    })
+  }, [onChange])
+
+  const uploadAndInsertImages = React.useCallback(async (rawFiles, rangeOverride = null) => {
+    const images = Array.from(rawFiles ?? []).filter(isImageFileLike)
+    if (!images.length) return false
+    toast(t('正在插入图片…'))
+    try {
+      const mdLines = []
+      for (let i = 0; i < images.length; i += 1) {
+        const { file, alt } = normalizePastedImage(images[i], i)
+        const res = await uploadAttachment(file)
+        if (res?.src) mdLines.push(`![${alt}](/${String(res.src).replace(/^\/+/, '')})`)
+      }
+      if (mdLines.length) {
+        insertBlockAtCursor(mdLines.join('\n\n'), rangeOverride)
+        toast(mdLines.length > 1 ? t('已插入 {n} 张图片', { n: mdLines.length }) : t('已插入图片'))
+      }
+      return true
+    } catch (err) {
+      toast(err.message || t('图片插入失败'), { error: true })
+      return false
+    }
+  }, [insertBlockAtCursor])
+
   const reportCaret = () => {
     const el = area.current
     if (!el) return
-    // 同言起：只有光标真的在编辑器里时才跟随
+    // 同言起：只有光标真的在编辑器里时才跟随与更新选区，避免点上方局部改写输入框时冲掉已选文字
     if (document.activeElement !== el) return
+    if (onSelection) {
+      const s = el.selectionStart ?? 0
+      const e = el.selectionEnd ?? 0
+      const selected = e > s ? el.value.slice(s, e) : ''
+      onSelection(selected.trim().length >= 1 ? { start: s, end: e, text: selected } : null)
+    }
     const line = lineAt(el.value, el.selectionStart)
     if (typewriter) keepCentered(line)
     if (line === caretLine.current) return
@@ -125,6 +232,33 @@ export function SourceEditor({ value, onChange, onCaret, lineNumbers, typewriter
       }
     },
     focus() { area.current?.focus() },
+    insertBlock(snippet) { insertBlockAtCursor(snippet) },
+    pickImages() {
+      const el = area.current
+      savedRange.current = el ? { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length } : null
+      fileInput.current?.click()
+    },
+    replaceRange(start, end, replacement) {
+      const el = area.current
+      const cur = el ? el.value : value
+      const expected = cur.slice(0, start) + replacement + cur.slice(end)
+      if (!el) {
+        onChange(expected)
+        return
+      }
+      el.focus({ preventScroll: true })
+      el.setSelectionRange(start, end)
+      try {
+        document.execCommand('insertText', false, replacement)
+      } catch {}
+      onChange(expected)
+      requestAnimationFrame(() => {
+        if (!area.current) return
+        if (area.current.value !== expected) area.current.value = expected
+        area.current.setSelectionRange(start, start + replacement.length)
+      })
+      onSelection?.(null)
+    },
   }))
 
   const onKeyDown = (event) => {
@@ -149,8 +283,54 @@ export function SourceEditor({ value, onChange, onCaret, lineNumbers, typewriter
     }
   }
 
+  const onPaste = (event) => {
+    const imgs = clipboardImageFiles(event.clipboardData)
+    if (!imgs.length) return
+    event.preventDefault()
+    const el = area.current
+    const range = el ? { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length } : null
+    uploadAndInsertImages(imgs, range)
+  }
+
+  const onDragOver = (event) => {
+    const hasFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files')
+    if (!hasFiles) return
+    event.preventDefault()
+    if (!dropping) setDropping(true)
+  }
+
+  const onDrop = (event) => {
+    setDropping(false)
+    const imgs = clipboardImageFiles(event.dataTransfer)
+    if (!imgs.length) return
+    event.preventDefault()
+    const el = area.current
+    const range = el ? { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length } : null
+    uploadAndInsertImages(imgs, range)
+  }
+
   return (
-    <div ref={scroller} className={`md-ed-scroll ${lineNumbers ? 'has-gutter' : ''} ${typewriter ? 'is-typewriter' : ''}`}>
+    <div
+      ref={scroller}
+      className={`md-ed-scroll ${lineNumbers ? 'has-gutter' : ''} ${typewriter ? 'is-typewriter' : ''} ${dropping ? 'is-dropping' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false) }}
+      onDrop={onDrop}
+    >
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        hidden
+        onChange={(e) => {
+          const picked = Array.from(e.target.files ?? [])
+          const range = savedRange.current
+          savedRange.current = null
+          e.target.value = ''
+          if (picked.length) uploadAndInsertImages(picked, range)
+        }}
+      />
       <div className="md-ed-inner">
         {lineNumbers ? (
           <div className="md-ed-gutter" aria-hidden="true">
@@ -169,6 +349,7 @@ export function SourceEditor({ value, onChange, onCaret, lineNumbers, typewriter
           onKeyUp={reportCaret}
           onClick={reportCaret}
           onSelect={reportCaret}
+          onPaste={onPaste}
           onBlur={onBlur}
         />
         <div ref={mirror} className="md-ed-mirror" aria-hidden="true" />

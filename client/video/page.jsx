@@ -281,7 +281,7 @@ export function VideoView() {
     script: <ScriptTab key={item.id} item={item} script={script} rate={rate} setRate={setRate} target={target} setTarget={setTarget} onNext={() => goTab('record')} />,
     record: <RecordTab key={item.id} item={item} script={script} rate={rate} onBusy={setBusy} onCut={(id) => { setCutTakeId(id); goTab('cut') }} />,
     captions: <CaptionsTab key={item.id} item={item} script={script} rate={rate} setRate={setRate} />,
-    cut: <CutTab key={item.id} item={item} takeId={cutTakeId} setTakeId={setCutTakeId} onRecord={() => goTab('record')} />,
+    cut: <CutTab key={item.id} item={item} takeId={cutTakeId} setTakeId={setCutTakeId} onRecord={() => goTab('record')} onFinish={() => goTab('finish')} />,
     finish: <FinishTab key={item.id} item={item} script={script} rate={rate} onBusy={setBusy} onRecord={() => goTab('record')} />,
     pack: <PackTab key={item.id} item={item} script={script} rate={rate} goTab={goTab} />,
   }

@@ -242,9 +242,9 @@ export async function uploadImage({ settings, buffer, cache, fetchImpl, mode }) 
   return { url, cached: false }
 }
 
-const LOCAL = /^media-desk\/files\/([\w.-]+)$/
-// 导入的稿子里引用的本地图片：media-desk/imported/<base64url>.<ext>，由调用方核对后给出真实路径
-const IMPORTED = /^media-desk\/imported\/([\w-]+\.[a-z0-9]{2,5})$/i
+const LOCAL = /^\/?media-desk\/files\/([\w.-]+)$/
+// 导入的稿子里引用的本地图片：/?media-desk/imported/<base64url>.<ext>，由调用方核对后给出真实路径
+const IMPORTED = /^\/?media-desk\/imported\/([\w-]+\.[a-z0-9]{2,5})$/i
 const REMOTE_MAX = 10 * 1024 * 1024
 
 /**
@@ -328,7 +328,7 @@ export async function uploadMany({ settings, srcs, filesDir, cache, fetchImpl, m
  */
 export async function hostArticleImages({ html, settings, filesDir, cache, fetchImpl, remoteFetch, importedPath }) {
   // 工作台图片、导入稿的本地图片和公网图片都要换成公众号自己的地址；已经是公众号地址的不动
-  const IMG = /<img\b[^>]*?\ssrc="(media-desk\/files\/[\w.-]+|media-desk\/imported\/[\w-]+\.[a-z0-9]{2,5}|https?:\/\/(?!mmbiz\.q(?:pic|logo)\.cn\/)[^"\s<>]+)"[^>]*>/gi
+  const IMG = /<img\b[^>]*?\ssrc="(\/?media-desk\/files\/[\w.-]+|\/?media-desk\/imported\/[\w-]+\.[a-z0-9]{2,5}|https?:\/\/(?!mmbiz\.q(?:pic|logo)\.cn\/)[^"\s<>]+)"[^>]*>/gi
   const srcs = [...String(html).matchAll(IMG)].map(match => match[1].replace(/&amp;/g, '&'))
   if (!srcs.length) return { html, errors: {} }
   const { urls, errors } = await uploadMany({ settings, srcs, filesDir, cache, fetchImpl, mode: 'wechat', remoteFetch, importedPath })

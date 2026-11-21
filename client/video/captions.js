@@ -42,9 +42,80 @@ export function clampRate(value) {
 /** 去掉 Markdown 记号，剩下要念的那句话。 */
 export function cleanLine(line) {
   return String(line ?? '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/^\s*(?:[-*+>]|\d+[.)、])\s+/, '')
-    .replace(/\*\*|__|`/g, '')
+    .replace(/\*\*|__|==|~~|`/g, '')
     .trim()
+}
+
+/**
+ * 把口播文稿按气口整理成「一句一行」的提词格式：
+ * 保留空行分段与 # 小标题，清掉 Markdown 符号，先把句号/问号/叹号拆成独立行，
+ * 超过 maxUnits 的长句再按逗号/分号/冒号贪心合并切分（不拆 3.5、1,200、github.com）。
+ */
+export function formatSpokenBreathLines(text, { maxUnits = 26 } = {}) {
+  const rawLines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n')
+  const out = []
+  let prevBlank = false
+  for (const raw of rawLines) {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      if (out.length && !prevBlank) { out.push(''); prevBlank = true }
+      continue
+    }
+    if (/^#{1,6}\s/.test(trimmed)) {
+      out.push(trimmed)
+      prevBlank = false
+      continue
+    }
+    if (/^(-{3,}|\*{3,})$/.test(trimmed)) continue
+    const cleaned = cleanLine(trimmed)
+    if (!cleaned || spokenUnits(cleaned) === 0) continue
+    prevBlank = false
+    // 先按句末强标点拆句
+    const sentences = []
+    let sBuf = ''
+    for (const tok of scan(cleaned)) {
+      sBuf += tok
+      if (isHard(tok) || tok === '。' || tok === '.') {
+        if (sBuf.trim()) sentences.push(sBuf.trim())
+        sBuf = ''
+      }
+    }
+    if (sBuf.trim()) sentences.push(sBuf.trim())
+    for (const sentence of sentences) {
+      if (spokenUnits(sentence) <= maxUnits) {
+        out.push(sentence)
+        continue
+      }
+      // 长句再按句内气口标点拆子句，贪心合并到不超过 maxUnits
+      const clauses = []
+      let cBuf = ''
+      for (const tok of scan(sentence)) {
+        cBuf += tok
+        if (isSoft(tok)) {
+          if (cBuf.trim()) clauses.push(cBuf.trim())
+          cBuf = ''
+        }
+      }
+      if (cBuf.trim()) clauses.push(cBuf.trim())
+      let merged = ''
+      for (const clause of clauses) {
+        if (!merged) {
+          merged = clause
+        } else if (spokenUnits(merged + clause) <= maxUnits) {
+          merged += clause
+        } else {
+          out.push(merged)
+          merged = clause
+        }
+      }
+      if (merged) out.push(merged)
+    }
+  }
+  while (out.length && out[out.length - 1] === '') out.pop()
+  return out.join('\n')
 }
 
 /** 小标题、分隔线和只有标点的行不念。 */

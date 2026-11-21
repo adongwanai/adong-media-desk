@@ -245,34 +245,45 @@ const shotOf = page => ({ ...(page.shot ? { shot: page.shot } : {}), ...(page.sh
  * @param {{platforms: string[], browser: {readPage: (url: string, allowed: Function) => Promise<{url: string, text: string|null}>}, callText: Function, previous?: Record<string, number>, wait?: () => Promise<void>, postsOnly?: boolean}} options
  * @returns {Promise<Array<object>>} 每个平台一条，source 是 'backstage'；需要登录的带 needLogin；posts 是每条作品的数。
  */
-export async function readBackstage({ platforms, browser, callText, previous = {}, wait = pause, postsOnly = false }) {
+export async function readBackstage({ platforms, browser, callText, previous = {}, wait = pause, postsOnly = false, onStartPlatform, onStep }) {
   const results = []
-  for (const [index, platform] of platforms.filter(name => BACKSTAGE[name]).entries()) {
-    if (index > 0) await wait()
+  const targets = platforms.filter(name => BACKSTAGE[name])
+  for (const [index, platform] of targets.entries()) {
+    await onStartPlatform?.(platform, index, targets.length)
     const base = { platform, name: null, followers: null, stats: {}, latest: null, top: null, posts: [], source: 'backstage' }
     try {
       const conf = BACKSTAGE[platform]
       if (!allowedNav(conf.home)) throw new Error(tr('不在白名单里的地址，已拒绝'))
       const page = await browser.readPage(conf.home, url => pageState(platform, url) === 'ok')
       if (page.text === null || pageState(platform, page.url) !== 'ok') {
-        results.push({ ...base, needLogin: true, error: tr('{platform}后台需要重新登录', { platform: platformName(platform) }), ...shotOf(page) })
+        const failed = { ...base, needLogin: true, error: tr('{platform}后台需要重新登录', { platform: platformName(platform) }), ...shotOf(page) }
+        results.push(failed)
+        await onStep?.(failed, index + 1, targets.length)
         continue
       }
       if (!page.text.trim() && !postsOnly) {
-        results.push({ ...base, error: tr('后台页面是空的'), ...shotOf(page) })
+        const empty = { ...base, error: tr('后台页面是空的'), ...shotOf(page) }
+        results.push(empty)
+        await onStep?.(empty, index + 1, targets.length)
         continue
       }
       let row = base
       if (!postsOnly) {
         const { text } = await callText({ ...backstagePrompt(platform, page.text), maxTokens: 1200, light: true, signal: AbortSignal.timeout(120_000) })
         row = toResult(platform, verifyFields(extractJson(text), page.text), previous[platform] ?? null)
+        // 首页粉丝与近期指标刚认出来就先回调落盘，不等后面较慢的作品列表页
+        await onStep?.(row, index, targets.length)
       }
       const { posts, postsError } = await readPosts(platform, conf, page.url, { browser, callText, wait })
       // 只读列表页时，这一条读到没读到就看作品有没有读到
       const error = postsOnly ? (posts.length ? null : postsError ?? tr('作品列表页上没认出数据')) : (row.error && posts.length ? null : row.error)
-      results.push({ ...row, posts, ...(postsError ? { postsError } : {}), error })
+      const done = { ...row, posts, ...(postsError ? { postsError } : {}), error }
+      results.push(done)
+      await onStep?.(done, index + 1, targets.length)
     } catch (err) {
-      results.push({ ...base, error: err.message || String(err) })
+      const crashed = { ...base, error: err.message || String(err) }
+      results.push(crashed)
+      await onStep?.(crashed, index + 1, targets.length)
     }
   }
   return results

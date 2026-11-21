@@ -2,7 +2,7 @@
 import React from 'react'
 import { PlatformMark } from './board.jsx'
 import { openInBrowser } from './browser.js'
-import { dispatchOps, openItem, pushWechatDraft, setDesk, toast, useDesk } from './desk.js'
+import { dispatchOps, getDesk, openItem, pushWechatDraft, setDesk, toast, useDesk } from './desk.js'
 import { plural, t, useLang } from './i18n.js'
 import { Dialog, Empty, Icon, Segmented, Swap } from './ui.jsx'
 import { Poster, useProgressive } from './lazy.jsx'
@@ -10,7 +10,7 @@ import { typeCover } from './cover.js'
 import { PLATFORMS, PLATFORM_URL, fmtWhen, isPublished, isPublishable, publishPhase } from './util.js'
 import { checkDraft, countFindings } from './checks.js'
 import { ChecksPanel, plainBody, readyVersion, tagLine, useActiveStyle } from './versions.jsx'
-import { usePrefs } from './layouts/prefs.js'
+import { readPrefs, usePrefs } from './layouts/prefs.js'
 import { WechatPublishControls, WechatPublishDialog } from './publish-wechat.jsx'
 import { SyncDraftsDialog } from './publish-sync.jsx'
 import { CardsButton } from './version-flow.jsx'
@@ -41,7 +41,16 @@ function plainText(markdown) {
 async function wechatHtml(markdown, prefs) {
   try {
     const layout = await import('./layouts/wechat.js')
-    return typeof layout.renderWechat === 'function' ? layout.renderWechat(String(markdown ?? ''), prefs?.theme, { font: prefs?.font, fontSize: prefs?.fontSize, images: prefs?.images }) : null
+    return typeof layout.renderWechat === 'function'
+      ? layout.renderWechat(String(markdown ?? ''), prefs?.theme, {
+        font: prefs?.font,
+        fontSize: prefs?.fontSize,
+        themes: prefs?.themes,
+        figures: prefs?.figures,
+        images: prefs?.images,
+        linkFootnotes: Boolean(prefs?.linkFootnotes),
+      })
+      : null
   } catch {
     return null
   }
@@ -94,8 +103,15 @@ function publishDraft(item, platform) {
 async function goPublish(item, platform) {
   const draft = publishDraft(item, platform)
   const text = [draft.title, draft.body, tagLine(draft.tags)].filter(Boolean).join('\n\n')
-  // 公众号编辑器认 HTML：优先复制排好版的正文，标题在编辑器里单独填
-  const html = platform === WECHAT ? await wechatHtml(draft.markdown) : null
+  // 公众号编辑器认 HTML：同步使用「长文」页记住的主题、字体、字号、自定义主题与外链转脚注设置
+  const articlePrefs = platform === WECHAT
+    ? {
+      ...readPrefs('article'),
+      themes: getDesk().state?.layoutThemes ?? [],
+      figures: (item.production?.images ?? []).filter(img => img?.src).map(img => ({ src: img.src, caption: img.caption, anchor: img.anchor })),
+    }
+    : null
+  const html = platform === WECHAT ? await wechatHtml(draft.markdown, articlePrefs) : null
   const rich = html ? await copyRich(html, text) : false
   const copied = rich || await copyText(text)
   openInBrowser(PLATFORM_URL[platform])
@@ -376,9 +392,17 @@ export function PublishView() {
   const chosen = useDesk(s => s.state.boardPlatforms)
   // 确认框和同步框开在页面最外层：成稿卡片带入场动画，框放在卡片里会被卡片裁住
   const [modal, setModal] = React.useState(null)
-  const [query, setQuery] = React.useState('')
-  const [phase, setPhase] = React.useState('todo')
-  const [platform, setPlatform] = React.useState('')
+  const publishFilter = useDesk(s => s.publishFilter)
+  const [query, setQuery] = React.useState(() => publishFilter?.query ?? '')
+  const [phase, setPhase] = React.useState(() => publishFilter?.phase ?? 'todo')
+  const [platform, setPlatform] = React.useState(() => publishFilter?.platform ?? '')
+  React.useEffect(() => {
+    if (!publishFilter) return
+    setQuery(publishFilter.query ?? '')
+    setPhase(publishFilter.phase ?? 'all')
+    setPlatform(publishFilter.platform ?? '')
+    setDesk({ publishFilter: null })
+  }, [publishFilter])
   const modalItem = modal ? items.find(item => item.id === modal.id) : null
   const pieces = React.useMemo(() => items.filter(isPublishable).sort((a, b) => finishedAt(b) - finishedAt(a)), [items])
   // 和内容页同一套「已发布」：状态是已发布，或者任何一个平台记了已发布

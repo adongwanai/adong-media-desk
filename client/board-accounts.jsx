@@ -27,7 +27,7 @@ const MAX_FACTS = 4
 const VIA_TEXT = { backstage: '后台读于 {when}' }
 const viaText = (via, iso) => t(VIA_TEXT[via] ?? '自动读于 {when}', { when: whenText(iso) })
 /** 约数（后台只给了「1.13万」）写成「约 1.13 万」，英文写「~11.3K」。 */
-const approxText = n => (lang() === 'en' ? `~${compact(n)}` : n >= 1e8 ? `约 ${(n / 1e8).toFixed(2).replace(/\.?0+$/, '')} 亿` : n >= 1e4 ? `约 ${(n / 1e4).toFixed(2).replace(/\.?0+$/, '')} 万` : `约 ${n.toLocaleString()}`)
+export const approxText = n => (lang() === 'en' ? `~${compact(n)}` : n >= 1e8 ? `约 ${(n / 1e8).toFixed(2).replace(/\.?0+$/, '')} 亿` : n >= 1e4 ? `约 ${(n / 1e4).toFixed(2).replace(/\.?0+$/, '')} 万` : `约 ${n.toLocaleString()}`)
 const STAT_LABEL_BY = { B站: { works: '投稿' }, GitHub: { works: '仓库' }, X: { works: '帖子' } }
 const statLabel = (platform, key) => t(STAT_LABEL_BY[platform]?.[key] ?? STAT_LABEL[key] ?? key)
 const POST_LABEL = { GitHub: '最新仓库', 谷歌学术: '最新论文', YouTube: '最新视频', X: '最新帖子', B站: '最新视频', 小红书: '最新笔记' }
@@ -156,8 +156,12 @@ const TRIGGER_TEXT = { schedule: '{when} 自动更新过', catchup: '{when} 补�
 
 function statusLabel(info, reading, refreshing) {
   const last = info?.last
-  if (refreshing && !reading) return t('正在更新…')
-  if (reading || last?.running) return t('正在读取各平台…')
+  if (refreshing && !reading && !last?.running) return t('正在更新…')
+  if (reading || last?.running) {
+    const prog = last?.progress
+    if (prog?.current && prog?.total) return t('正在读取 · {platform}（{done}/{total}）…', { platform: t(prog.current), done: Math.min((prog.done ?? 0) + 1, prog.total), total: prog.total })
+    return t('正在读取各平台…')
+  }
   const results = last?.results ?? []
   if (last?.at) {
     const ok = results.filter(row => row.ok).length
@@ -371,18 +375,18 @@ export function PlatformCard({ row, auto = { readable: false }, onLog, onLink, o
   if (row.followers === null) return <BlankCard row={row} auto={auto} onLog={onLog} onLink={onLink} onRead={onRead} />
   const name = t(row.platform)
   const hasFoot = !row.latestPost && (row.latestViews !== null || row.engagementRate !== null)
+  const hasDelta = row.today !== null || row.d7 !== null
+  const readStamp = row.fetchedAt ? viaText(row.fetchedVia, row.fetchedAt) : row.statsVia && row.statsAt ? viaText(row.statsVia, row.statsAt) : null
+  const countTip = [row.followersApprox ? t('后台只给了约数') : '', hasDelta && readStamp ? readStamp : ''].filter(Boolean).join(' · ') || undefined
   return (
     <section className="md-tile md-b-card">
       <header><PlatformMark platform={row.platform} size={24} /><strong>{name}</strong><span className="md-grow" /><HomeLink platform={row.platform} /></header>
-      <div className="md-b-count" title={row.followersApprox ? t('后台只给了约数') : undefined}>{row.followersApprox ? approxText(row.followers) : row.followers.toLocaleString()}</div>
+      <div className="md-b-count" title={countTip}>{row.followersApprox ? approxText(row.followers) : row.followers.toLocaleString()}</div>
       <div className="md-b-deltas">
         <Delta label={t('今日')} value={row.today} />
         <Delta label={t('7 天')} value={row.d7} />
-        {row.fetchedAt
-          ? <span className="md-b-delta is-src" title={viaText(row.fetchedVia, row.fetchedAt)}>{viaText(row.fetchedVia, row.fetchedAt)}</span>
-          : row.today === null && row.d7 === null ? <span className="md-b-delta">{row.loggedAt ? t('上次记录 {date}', { date: short(row.loggedAt) }) : t('还没开始逐日记录')}</span> : null}
-        {/* 主数字是手动记的、其他项是后台读的：读于何时单独标出来 */}
-        {!row.fetchedAt && row.statsVia && row.statsAt ? <span className="md-b-delta is-src">{viaText(row.statsVia, row.statsAt)}</span> : null}
+        {!hasDelta && readStamp ? <span className="md-b-delta is-src" title={readStamp}>{readStamp}</span> : null}
+        {!hasDelta && !readStamp ? <span className="md-b-delta">{row.loggedAt ? t('上次记录 {date}', { date: short(row.loggedAt) }) : t('还没开始逐日记录')}</span> : null}
       </div>
       <Facts row={row} />
       {row.spark.length > 1

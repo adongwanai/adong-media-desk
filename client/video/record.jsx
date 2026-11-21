@@ -95,6 +95,12 @@ export function useRecorder({ itemId, kind, title, onSaved }) {
     session.done = new Promise((resolve) => {
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
       recorder.onstop = async () => {
+        if (session.discard) {
+          ref.current = null
+          setPhase('idle')
+          resolve(false)
+          return
+        }
         const seconds = (performance.now() - session.started) / 1000
         setPhase('saving')
         const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })
@@ -122,12 +128,20 @@ export function useRecorder({ itemId, kind, title, onSaved }) {
     if (session.recorder.state === 'recording') session.recorder.stop()
     return session.done
   }
+  const discard = async () => {
+    const session = ref.current
+    if (!session) return
+    session.discard = true
+    session.beforeStop = null
+    if (session.recorder.state === 'recording') session.recorder.stop()
+    await session.done
+  }
   React.useEffect(() => () => { if (ref.current?.recorder.state === 'recording') ref.current.recorder.stop() }, [])
   const mark = (text) => {
     const session = ref.current
     if (session?.recorder.state === 'recording' && text) session.log.push({ t: (performance.now() - session.started) / 1000, text })
   }
-  return { phase, elapsed, start, stop, mark }
+  return { phase, elapsed, start, stop, discard, mark }
 }
 
 function usePrompterPrefs() {
@@ -280,6 +294,13 @@ function CameraRecorder({ item, lines, durations, prefs, onBusy }) {
     prompter.current?.pause()
     await recorder.stop()
   }
+  const retake = async () => {
+    countdown.cancel()
+    prompter.current?.pause()
+    await recorder.discard()
+    prompter.current?.reset()
+    record()
+  }
 
   return (
     <div className="md-vd-recorder">
@@ -307,7 +328,10 @@ function CameraRecorder({ item, lines, durations, prefs, onBusy }) {
         {!stream ? (
           <button type="button" className="md-btn is-primary is-big" disabled={asking} onClick={open}><Icon name="user" size={16} />{asking ? t('等待授权…') : t('打开摄像头')}</button>
         ) : recorder.phase === 'recording' || countdown.left > 0 ? (
-          <button type="button" className="md-btn is-danger-solid is-big" onClick={stop}><span className="md-vd-stop" />{t('停止并保存')}</button>
+          <>
+            <button type="button" className="md-btn is-danger-solid is-big" onClick={stop}><span className="md-vd-stop" />{t('停止并保存')}</button>
+            <button type="button" className="md-btn is-big" onClick={retake} title={t('丢弃本条未完成的录像，回到第一句重新倒数开录')}><Icon name="refresh" size={15} />{t('放弃重录')}</button>
+          </>
         ) : (
           <button type="button" className="md-btn is-primary is-big" disabled={recorder.phase === 'saving'} onClick={record}><span className="md-vd-dot" />{prefs.countdown ? t('开始录制（倒数 {n} 秒）', { n: prefs.countdown }) : t('开始录制')}</button>
         )}

@@ -189,4 +189,25 @@ export const BOARD = {
   '在新标签页里看大图': 'Open full size in a new tab',
   '{platform}读不到时的页面': '{platform} page when the read failed',
   '截图已经清掉了': 'That screenshot has been cleaned up',
+  // 首页细节打磨
+  '记灵感': 'Capture idea',
+  '打开已发布的页面': 'Open published post',
+  '去「发布」查看{platform}进度': 'Check {platform} status in Publish',
+  '含平台返回的约数': 'Includes rounded numbers from platform dashboards',
+  '约': 'approx.',
+  '每日净增 · 近 {n} 天': 'Daily net · last {n} days',
+  '近 {n} 天各平台每日净增粉丝': 'Daily net followers by platform, last {n} days',
+  '隐藏金额': 'Hide amounts',
+  '显示金额': 'Show amounts',
+  '修改这笔收入': 'Edit income entry',
+  '修改一笔收入': 'Edit an income entry',
+  '点击修改：{what}': 'Click to edit: {what}',
+  '近 10 天灵感邮票': 'Idea stamps from the last 10 days',
+  '正在读取 · {platform}（{done}/{total}）…': 'Reading · {platform} ({done}/{total})…',
 }
+
+
+
+
+
+

@@ -1,23 +1,25 @@
 // 排版选择的记忆：长文和图文卡片各记一份（主题、骨架、封面、字体、字号、比例、导出尺寸、分页标题级别、背景图），
 // 署名单独一份（含页脚、日期格式），编辑器的偏好（分栏宽度、锁定、打字机、行号）一份；
 // 每篇内容自己的图片调整、表格缩放、封面槽位按内容 id 各记一份（同言起 imageScales / tableScales，只是多了内容 id）。
-// 都存在 localStorage；隐私模式等存不了时只在这次生效。
+// 既记在 localStorage，也同步到当前工作台数据目录的 state.json（无内置个人默认）。
 import React from 'react'
+import { dispatchOps, useDesk } from '../desk.js'
 import { DEFAULT_COVER, DEFAULT_HEADING_LEVEL, DEFAULT_RATIO, DEFAULT_TEMPLATE, DEFAULT_TIER, cleanImageState, cleanTableScale } from './cards.js'
+import { DEFAULT_SIGNATURE } from './signature.js'
 import { DEFAULT_WECHAT_SIZE } from './wechat.js'
 import { DEFAULT_FONT, DEFAULT_FONT_SIZE, DEFAULT_THEME, THEME_ALIASES, YANQI_THEMES } from './yanqi.js'
+
+export { DEFAULT_SIGNATURE }
 
 const KEY = 'media-desk:yanqi:'
 // 旧版只记了主题，存的是 clean / tech / essay / night / journal
 const LEGACY = { article: 'media-desk:layout-theme:wechat', card: 'media-desk:layout-theme:xhs' }
 
 const DEFAULTS = {
-  article: { theme: DEFAULT_THEME, font: DEFAULT_FONT, fontSize: DEFAULT_WECHAT_SIZE },
-  card: { theme: DEFAULT_THEME, template: DEFAULT_TEMPLATE, cover: DEFAULT_COVER, font: DEFAULT_FONT, fontSize: DEFAULT_FONT_SIZE, ratio: DEFAULT_RATIO, tier: DEFAULT_TIER, headingLevel: DEFAULT_HEADING_LEVEL, background: null, safeArea: false },
+  article: { theme: DEFAULT_THEME, font: DEFAULT_FONT, fontSize: DEFAULT_WECHAT_SIZE, linkFootnotes: false },
+  card: { theme: DEFAULT_THEME, template: DEFAULT_TEMPLATE, cover: DEFAULT_COVER, font: DEFAULT_FONT, fontSize: DEFAULT_FONT_SIZE, ratio: DEFAULT_RATIO, tier: DEFAULT_TIER, headingLevel: DEFAULT_HEADING_LEVEL, background: null, safeArea: false, coverOnly: false, compactFlow: false },
   editor: { split: 0.44, locked: false, typewriter: false, lineNumbers: false },
 }
-
-const EMPTY_SIGNATURE = { name: '', id: '', avatar: '', left: '', right: '', showDate: true, showFooter: true, timeFormat: 'zh-CN' }
 
 function read(key) {
   try {
@@ -38,9 +40,16 @@ function write(key, value) {
   }
 }
 
-function initialPrefs(form) {
+function initialPrefs(form, serverCardPrefs) {
   const saved = read(KEY + form)
-  if (saved && typeof saved === 'object') return { ...DEFAULTS[form], ...saved }
+  if (saved && typeof saved === 'object' && (!saved.adongProfileRev || saved.customized)) {
+    const merged = { ...DEFAULTS[form], ...(form === 'card' && serverCardPrefs ? serverCardPrefs : {}), ...saved }
+    if (form === 'card' && saved.font === '雅黑' && !saved.fontTouched) merged.font = serverCardPrefs?.font || DEFAULT_FONT
+    return merged
+  }
+  if (form === 'card' && serverCardPrefs && typeof serverCardPrefs === 'object') {
+    return { ...DEFAULTS.card, ...serverCardPrefs }
+  }
   let legacy = null
   try {
     legacy = window.localStorage.getItem(LEGACY[form])
@@ -49,25 +58,72 @@ function initialPrefs(form) {
   return theme ? { ...DEFAULTS[form], theme } : { ...DEFAULTS[form] }
 }
 
+function hasSignatureData(sig) {
+  return Boolean(sig && typeof sig === 'object' && (sig.name || sig.id || sig.avatar || sig.left || sig.right))
+}
+
+function initialSignature(serverSig) {
+  const saved = read(`${KEY}signature`)
+  if (saved && typeof saved === 'object' && saved.customized && !saved.adongProfileRev) {
+    return { ...DEFAULT_SIGNATURE, ...saved }
+  }
+  if (hasSignatureData(serverSig)) {
+    return { ...DEFAULT_SIGNATURE, ...serverSig }
+  }
+  return { ...DEFAULT_SIGNATURE }
+}
+
+/** 直接读取某一组排版记忆（比如在发布页同步使用长文主题和脚注设置）。 */
+export function readPrefs(form) {
+  return initialPrefs(form)
+}
+
 /** 某一组排版选择（'article' 长文 / 'card' 图文卡片 / 'editor' 编辑器），改了就记下来。 */
 export function usePrefs(form) {
-  const [prefs, setPrefs] = React.useState(() => initialPrefs(form))
+  const serverCardPrefs = useDesk(s => (form === 'card' ? s.state?.cardPrefs : null))
+  const [prefs, setPrefs] = React.useState(() => initialPrefs(form, serverCardPrefs))
+  React.useEffect(() => {
+    if (form !== 'card' || !serverCardPrefs) return
+    setPrefs((prev) => {
+      if (prev.customized) return prev
+      return { ...prev, ...serverCardPrefs }
+    })
+  }, [form, serverCardPrefs])
   const update = React.useCallback((patch) => {
     setPrefs((prev) => {
-      const next = { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }
+      const resolved = typeof patch === 'function' ? patch(prev) : patch
+      const { adongProfileRev: _legacy, ...cleanPrev } = prev
+      const next = {
+        ...cleanPrev,
+        ...resolved,
+        customized: true,
+        ...(resolved && 'font' in resolved ? { fontTouched: true } : {}),
+      }
       write(KEY + form, next)
+      if (form === 'card') dispatchOps([{ op: 'save_card_profile', prefs: next }], { silent: true }).catch(() => {})
       return next
     })
   }, [form])
   return [prefs, update]
 }
 
-/** 卡片上的署名。默认全空：这个工作台给谁用，就印谁的名字。 */
+/** 卡片上的署名：默认全空，由当前工作台数据目录或用户自行填写/同步提供。 */
 export function useSignature() {
-  const [signature, setSignature] = React.useState(() => ({ ...EMPTY_SIGNATURE, ...read(`${KEY}signature`) }))
+  const serverSig = useDesk(s => s.state?.cardSignature)
+  const [signature, setSignature] = React.useState(() => initialSignature(serverSig))
+  React.useEffect(() => {
+    if (!hasSignatureData(serverSig)) return
+    setSignature((prev) => {
+      if (prev.customized && !prev.adongProfileRev) return prev
+      return { ...DEFAULT_SIGNATURE, ...serverSig }
+    })
+  }, [serverSig])
   const update = React.useCallback((next) => {
-    setSignature(next)
-    write(`${KEY}signature`, next)
+    const { adongProfileRev: _legacy, ...clean } = next ?? {}
+    const stamped = { ...DEFAULT_SIGNATURE, ...clean, customized: true }
+    setSignature(stamped)
+    write(`${KEY}signature`, stamped)
+    dispatchOps([{ op: 'save_card_profile', signature: stamped }], { silent: true }).catch(() => {})
   }, [])
   return [signature, update]
 }

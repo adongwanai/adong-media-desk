@@ -15,7 +15,7 @@ import { HomeView } from './canvas.jsx'
 import { looksLikeNotePath } from './capture-text.js'
 import { ChatDock } from './chat.jsx'
 import { ContentView } from './content.jsx'
-import { addMaterials, captureFile, captureFiles, captureUrl, dispatchOps, loadDesk, readPickedMaterials, setDesk, toast, undo, useDesk, MAX_MATERIALS_PER_ADD } from './desk.js'
+import { addMaterials, captureFile, captureFiles, captureUrl, dispatchOps, loadDesk, MATERIAL_ACCEPT, readPickedMaterials, setDesk, toast, undo, useDesk, MAX_MATERIALS_PER_ADD } from './desk.js'
 import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
@@ -117,7 +117,8 @@ function CaptureDialog() {
         return
       }
       if (value) {
-        const data = await dispatchOps([{ op: 'add_item', kind: tab === 'quote' ? 'quote' : 'note', title: tab === 'quote' ? value : value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40), body: tab === 'quote' ? '' : value }], { label: t('记下灵感') })
+        const title = tab === 'quote' ? value : value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40)
+        const data = await dispatchOps([{ op: 'add_item', kind: tab === 'quote' ? 'quote' : 'note', title, body: tab === 'quote' || value === title ? '' : value }], { label: t('记下灵感') })
         await attach(data?.receipts?.[0]?.target)
         close()
       }
@@ -157,7 +158,7 @@ function CaptureDialog() {
               <span className="md-grow" />
               <button type="button" className="md-link-btn" onClick={() => materialInput.current?.click()}>{t('加素材文件')}</button>
               <button type="button" className="md-link-btn" aria-expanded={pastePaths} onClick={() => setPastePaths(value => !value)}>{pastePaths ? t('收起路径') : t('贴路径')}</button>
-              <input ref={materialInput} type="file" hidden multiple accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={async (e) => { await pickMaterials(e.target.files); e.target.value = '' }} />
+              <input ref={materialInput} type="file" hidden multiple accept={MATERIAL_ACCEPT} onChange={async (e) => { await pickMaterials(e.target.files); e.target.value = '' }} />
             </div>
             {pastePaths ? <textarea className="md-capture-paths" rows={3} value={materialPaths} onChange={e => setMaterialPaths(e.target.value)} placeholder={t('一行一个文件路径，比如 /Users/你/Documents/笔记.md')} aria-label={t('素材文件路径')} /> : null}
             {pastePaths && pastedPaths().length + materials.length > MAX_MATERIALS_PER_ADD ? <small className="is-error">{t('一次最多加 {n} 份素材', { n: MAX_MATERIALS_PER_ADD })}</small> : null}
@@ -324,18 +325,23 @@ export function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map((entry, index) => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} title={`${t('{page}（快捷键 G {letter} 或 {keys}）', { page: pageLabel(entry), letter: entry.letter, keys: keysText({ code: `Digit${index + 1}`, modifiers: ['primary'] }) })}${counts[entry.id] ? `\n${t(NAV_BADGE_HINT[entry.id], { n: counts[entry.id] })}` : ''}`} onClick={() => setDesk({ view: entry.id, focusId: null })}>{pageLabel(entry)}{counts[entry.id] ? <span className="md-nav-count">{counts[entry.id]}</span> : null}</button>
+              <React.Fragment key={entry.id}>
+                {['sources', 'video', 'insights'].includes(entry.id) ? <i className="md-nav-sep" aria-hidden="true" /> : null}
+                <button type="button" className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} title={`${t('{page}（快捷键 G {letter} 或 {keys}）', { page: pageLabel(entry), letter: entry.letter, keys: keysText({ code: `Digit${index + 1}`, modifiers: ['primary'] }) })}${counts[entry.id] ? `\n${t(NAV_BADGE_HINT[entry.id], { n: counts[entry.id] })}` : ''}`} onClick={() => setDesk({ view: entry.id, focusId: null })}>{pageLabel(entry)}{counts[entry.id] ? <span className="md-nav-count">{counts[entry.id]}</span> : null}</button>
+              </React.Fragment>
             ))}
           </nav>
           <span className="md-grow" />
           {ready ? <SampleBadge /> : null}
           {canUndo ? <IconButton icon="undo" label={t('撤销上一步')} onClick={undo} /> : null}
-          {ready ? <span className="md-topbar-model"><ModelButton /></span> : null}
-          {/* 风格不是每天都要进的页面，和设置一起收在右上角 */}
-          <IconButton icon="pen" label={t('写作风格')} active={view === 'style'} onClick={() => setDesk({ view: 'style', focusId: null })} />
-          <IconButton icon="help" className="md-topbar-help" label={t('怎么用')} onClick={() => setDesk({ guide: true })} />
-          <IconButton icon="search" label={t('命令面板（{keys}）', { keys: keysText(PALETTE_KEY) })} onClick={() => setDesk({ palette: true })} />
-          <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
+          {ready ? <ModelButton /> : null}
+          {/* 风格不是每天都要进的页面，和帮助、搜索、设置一起收进右上角同一条胶囊里 */}
+          <div className="md-topbar-tools">
+            <IconButton icon="pen" label={t('写作风格')} active={view === 'style'} onClick={() => setDesk({ view: 'style', focusId: null })} />
+            <IconButton icon="help" className="md-topbar-help" label={t('怎么用')} onClick={() => setDesk({ guide: true })} />
+            <IconButton icon="search" label={t('命令面板（{keys}）', { keys: keysText(PALETTE_KEY) })} onClick={() => setDesk({ palette: true })} />
+            <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
+          </div>
           {/* 各页面共用原生 DSH 助手入口 */}
           {showDock ? null : <button type="button" className="md-open-dock" onClick={() => setDesk({ dockOpen: true })}><Icon name="chat" size={15} />{t('助手')}</button>}
         </header>

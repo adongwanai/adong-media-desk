@@ -7,7 +7,8 @@ import { openInBrowser } from './browser.js'
 import { dispatchOps, refreshRivals, report, setDesk, useDesk } from './desk.js'
 import { t, useLang } from './i18n.js'
 import { myFollowers, rivalTrend } from './rival-stats.js'
-import { RivalWorks } from './rival-works.jsx'
+import { launchCounterTopic, RivalWorks } from './rival-works.jsx'
+import { scoreWorks } from '../src/rival-score.js'
 import { Icon, IconButton, Swap } from './ui.jsx'
 import { ACCOUNT_PLATFORMS, compact, fmtWhen } from './util.js'
 
@@ -94,6 +95,88 @@ function Compare({ rows }) {
   )
 }
 
+/** 跨账号汇总的异动爆款雷达 + 单条爆款快拆反切入台。 */
+function OutlierRadar({ rivals, allWorks }) {
+  const [quickInput, setQuickInput] = React.useState('')
+  const [launching, setLaunching] = React.useState(false)
+  const outliers = React.useMemo(() => {
+    const out = []
+    for (const rival of rivals) {
+      const works = (allWorks ?? []).filter(w => w.rivalId === rival.id)
+      if (!works.length) continue
+      const name = rival.name || hostOf(rival.url)
+      for (const row of scoreWorks(works, rival.platform)) {
+        if (['现象级', '爆款', '潜力'].includes(row.grade)) {
+          out.push({ ...row, rivalName: name, platform: rival.platform })
+        }
+      }
+    }
+    return out.sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0)).slice(0, 8)
+  }, [rivals, allWorks])
+
+  const submitQuick = async (event) => {
+    event.preventDefault()
+    const raw = quickInput.trim()
+    if (!raw || launching) return
+    setLaunching(true)
+    const isUrl = /^https?:\/\/\S+$/i.test(raw)
+    try {
+      await launchCounterTopic({
+        title: isUrl ? `对标拆解：${hostOf(raw)}` : raw.slice(0, 80),
+        url: isUrl ? raw : '',
+        source: '单条爆款快拆',
+      })
+      setQuickInput('')
+    } finally {
+      setLaunching(false)
+    }
+  }
+
+  return (
+    <section className="md-tile md-r-radar" aria-label={t('爆款异动与反切入拆题')}>
+      <div className="md-r-radar-head">
+        <div>
+          <h2><Icon name="bolt" size={15} />{t('爆款异动与反角度拆题')}</h2>
+          <p className="md-muted">{t('抓对标不是抄选题，是看哪条突然跑赢他自己的中位数，再从一线工程与 OPC 代价视角切出「同意一半」的新判断。')}</p>
+        </div>
+      </div>
+      <form className="md-r-quick" onSubmit={submitQuick}>
+        <input
+          type="text"
+          value={quickInput}
+          onChange={e => setQuickInput(e.target.value)}
+          placeholder={t('刷到同行爆款？直接粘贴链接或标题，一键拆钩子并按「同意一半/工程代价」反切入开写…')}
+          aria-label={t('粘贴同行爆款链接或标题')}
+        />
+        <button type="submit" className="md-btn is-primary" disabled={!quickInput.trim() || launching}>
+          <Icon name="spark" size={14} />{launching ? t('正在进入工作区…') : t('拆钩子反切入开写')}
+        </button>
+      </form>
+      {outliers.length ? (
+        <ul className="md-r-outliers" aria-label={t('异动爆款榜')}>
+          {outliers.map(item => (
+            <li key={item.id} className="md-r-outlier-row">
+              <span className={`md-rw-grade ${item.grade === '现象级' ? 'is-top' : item.grade === '爆款' ? 'is-hit' : 'is-up'}`}>{t(item.grade)}</span>
+              <span className="md-r-outlier-mult">{Number.isFinite(item.ratio) ? `${item.ratio.toFixed(1)}×` : '∞'}</span>
+              <PlatformMark platform={item.platform} size={16} />
+              <span className="md-r-outlier-author">{item.rivalName}</span>
+              <strong className="md-r-outlier-title" title={item.title}>{item.title}</strong>
+              <span className="md-grow" />
+              <button
+                type="button"
+                className="md-pill is-small is-primary"
+                onClick={() => launchCounterTopic({ title: item.title, url: item.url, source: item.rivalName, ratio: item.ratio })}
+              >
+                <Icon name="bolt" size={12} />{t('反切入开写')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
 export function RivalsView() {
   useLang()
   const rivals = useDesk(s => s.state.rivals ?? [])
@@ -149,6 +232,7 @@ export function RivalsView() {
           </div>
         ) : null}
       </div>
+      <OutlierRadar rivals={rivals} allWorks={allWorks} />
       <form className="md-s-add" onSubmit={add}>
         <select className="md-r-platform" value={platform} onChange={e => setPlatform(e.target.value)} aria-label={t('平台')}>
           {ACCOUNT_PLATFORMS.map(value => <option key={value} value={value}>{t(value)}</option>)}

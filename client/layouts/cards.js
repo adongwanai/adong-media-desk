@@ -5,7 +5,7 @@
 // 卡片 HTML 只有行内样式，文字全部转义，图片只收 data:image，导出成 PNG 时不依赖任何外部资源。
 import { COVER_TEMPLATES, COVER_TEMPLATE_IDS, coverChecks, coverLayout } from './covers.js'
 import { dropLeadingTitle, parseBlocks, parseInline } from './markdown.js'
-import { DEFAULT_FONT, DEFAULT_FONT_SIZE, blockHtml, clampFontSize, css, cssValue, escapeHtml, fontFamily, headingHtml, imageKey, richBlocks, yanqiTheme } from './yanqi.js'
+import { DEFAULT_FONT, DEFAULT_FONT_SIZE, blockHtml, clampFontSize, coverImageBox, css, cssValue, escapeHtml, fontFamily, headingHtml, imageKey, richBlocks, yanqiTheme } from './yanqi.js'
 
 /** 卡片按言起预览的尺寸排版（3:4 是 450×600），导出时按选的像素放大。 */
 export const CARD_WIDTH = 450
@@ -157,7 +157,7 @@ export function cardContext(prefs = {}, signature = {}, extra = {}) {
     exportWidth: size.exportWidth,
     exportHeight: size.exportHeight,
     ratio: size.ratio,
-    pad: { ...pad, top: 10 },
+    pad: { ...pad, top: 8 },
     headingLevel: HEADING_LEVELS.includes(Number(prefs.headingLevel)) ? Number(prefs.headingLevel) : DEFAULT_HEADING_LEVEL,
     signature: {
       name: String(signature.name ?? '').trim().slice(0, 40),
@@ -248,6 +248,7 @@ export function planSections(markdown, { title = '', coverTitle = '', figures = 
     sections[at].blocks.push({ type: 'image', src: figure.src, alt: String(figure.caption ?? ''), line: last?.end ?? sections[at].line, end: last?.end ?? sections[at].line, figure: true })
   })
   const pages = []
+  let pendingHardBreak = false
   sections.forEach((section, index) => {
     const blocks = section.blocks.flatMap((block) => {
       if (block.type !== 'image') return [block]
@@ -259,11 +260,31 @@ export function planSections(markdown, { title = '', coverTitle = '', figures = 
       if (block.type === 'rule') parts.push([])
       else parts[parts.length - 1].push(block)
     }
+    let emittedInSection = 0
     parts.forEach((part, i) => {
-      if (i > 0 && !part.length) return
+      // 节末写了 ---（如导语和第一个 ## 之间写 ---）：把强制分页标记传递给下一节，绝不吞掉用户的 ---
+      if (i > 0 && !part.length) {
+        pendingHardBreak = true
+        return
+      }
+      // 节首紧跟 ---（如 ## 标题下面第一行写了 ---）：标题留给后面真正有正文的块，同时记下强制分页
+      if (i === 0 && !part.length && parts.some((p, idx) => idx > 0 && p.length > 0)) {
+        pendingHardBreak = true
+        return
+      }
       const cover = section.kind === 'cover'
-      if (!cover && !part.length && !plain(section.heading) && i === 0) return
-      pages.push({ kind: cover && i === 0 ? 'cover' : 'content', heading: cover && i > 0 ? [] : section.heading, blocks: part, section: index, hardBreak: i > 0, line: i === 0 ? section.line : lineOf(part, section.line) })
+      if (!cover && !part.length && !plain(section.heading) && emittedInSection === 0) return
+      const hardBreak = i > 0 || pendingHardBreak
+      pendingHardBreak = false
+      pages.push({
+        kind: cover && emittedInSection === 0 ? 'cover' : 'content',
+        heading: cover && emittedInSection > 0 ? [] : section.heading,
+        blocks: part,
+        section: index,
+        hardBreak,
+        line: emittedInSection === 0 ? section.line : lineOf(part, section.line),
+      })
+      emittedInSection += 1
     })
   })
   return pages
@@ -274,12 +295,25 @@ export function planSections(markdown, { title = '', coverTitle = '', figures = 
  * @param {Array<object>} sections - planSections 的结果。
  * @param {string} cover - 封面 id。
  */
-export function applyCoverMode(sections, cover) {
-  if (!isTemplateCover(cover)) return sections
+export function applyCoverMode(sections, cover, coverOnly = false) {
+  if (!isTemplateCover(cover) && !coverOnly) return sections
   return sections.flatMap((section) => {
     if (section.kind !== 'cover' || !section.blocks.length) return [section]
     return [{ ...section, blocks: [] }, { kind: 'content', heading: [], blocks: section.blocks, section: section.section, line: lineOf(section.blocks, section.line), intro: true }]
   })
+}
+
+/** 估算一张内容卡上的可读字数，用来标出只剩一两句话的孤页。 */
+export function pageCharCount(page) {
+  if (!page || page.kind === 'cover') return Infinity
+  let chars = plain(page.heading ?? []).length
+  for (const block of page.blocks ?? []) {
+    if (block.type === 'image' || block.type === 'table' || block.type === 'code') return Infinity
+    if (block.runs) chars += plain(block.runs).length
+    if (block.title) chars += plain(block.title).length
+    if (block.items) for (const item of block.items) chars += plain(item.runs ?? []).length
+  }
+  return chars
 }
 
 /** 正文里的小标题（按分页的那一级），新封面的清单、步骤槽位用。 */
@@ -355,11 +389,12 @@ function splitLine(block, headRuns) {
 function splitBlock(block, test) {
   switch (block.type) {
     case 'paragraph':
-    case 'quote': {
+    case 'quote':
+    case 'callout': {
       const parts = splitRuns(block.runs, runs => test({ ...block, runs }))
       if (!parts) return null
       const at = splitLine(block, parts[0])
-      return [{ ...block, runs: parts[0], end: at }, { ...block, runs: parts[1], line: at }]
+      return [{ ...block, runs: parts[0], end: at }, { ...block, ...(block.type === 'callout' ? { title: [] } : {}), runs: parts[1], line: at }]
     }
     case 'list': {
       const m = maxFit(block.items.length - 1, n => test({ ...block, items: block.items.slice(0, n) }))
@@ -406,45 +441,87 @@ export function numberPages(pages) {
   return pages.map((page, i) => ({ ...page, number: i + 1, total: pages.length }))
 }
 
-/** Keep explicit page breaks; combine short semantic sections when the real card can hold both. */
-export function packPages(pages, fits) {
+function blockPlainChars(block) {
+  if (!block) return 0
+  let total = 0
+  if (block.runs) total += plain(block.runs).length
+  if (block.title) total += plain(block.title).length
+  if (block.items) for (const item of block.items) total += plain(item.runs ?? []).length
+  return total
+}
+
+/** Keep explicit page breaks; combine sections and flow paragraphs/lists/images across cards to minimize whitespace. */
+export function packPages(pages, fits, { includeCover = false } = {}) {
   const packed = []
-  for (const page of pages) {
+  for (const rawPage of pages) {
+    // 在连续信息流排版（packPages）下，跨页续接绝不凭空重复上一页已经印过的小标题
+    const page = rawPage.continued ? { ...rawPage, heading: [] } : rawPage
     const last = packed.at(-1)
-    if (!last || last.kind === 'cover' || page.hardBreak || page.continued) {
+    const sameSectionCont = Boolean(last && page.continued && last.section === page.section && !page.hardBreak)
+    if (!last || (!includeCover && last.kind === 'cover') || page.hardBreak || (page.continued && !sameSectionCont)) {
       packed.push({ ...page, blocks: [...page.blocks] })
       continue
     }
-    const heading = page.heading.length ? [{ type: 'heading', level: 2, runs: page.heading, line: page.line, end: page.line }] : []
-    const joined = { ...last, blocks: [...last.blocks, ...heading, ...page.blocks] }
+    const heading = !sameSectionCont && page.heading.length ? [{ type: 'heading', level: 2, runs: page.heading, line: page.line, end: page.line }] : []
+    const joined = { ...last, section: page.section, blocks: [...last.blocks, ...heading, ...page.blocks] }
     if (fits(joined)) packed[packed.length - 1] = joined
     else {
-      // A whole section may not fit, while several complete paragraphs do.
-      // Keep images with their explanation and never leave a heading alone.
+      // A whole section may not fit, while its opening paragraphs do.
+      // Keep the lead-in paragraph immediately preceding an image attached to that image,
+      // and never leave a lone heading at card bottom.
       let count = 0
-      if (!page.blocks.some(block => block.type === 'image')) {
-        for (let n = 1; n < page.blocks.length; n++) {
-          const blocks = [...last.blocks, ...heading, ...page.blocks.slice(0, n)]
-          if (!fits({ ...last, blocks })) break
-          if (blocks.at(-1).type !== 'heading') count = n
-        }
+      const firstImageIdx = page.blocks.findIndex(block => block.type === 'image')
+      const maxMovable = firstImageIdx < 0 ? page.blocks.length - 1 : Math.max(0, firstImageIdx - 1)
+      for (let n = 1; n <= maxMovable; n++) {
+        const blocks = [...last.blocks, ...heading, ...page.blocks.slice(0, n)]
+        if (!fits({ ...last, blocks })) break
+        const tail = blocks.at(-1)
+        if (tail.type !== 'heading') count = n
       }
       if (count) {
-        packed[packed.length - 1] = { ...last, blocks: [...last.blocks, ...heading, ...page.blocks.slice(0, count)] }
-        packed.push({ ...page, blocks: page.blocks.slice(count), line: lineOf(page.blocks.slice(count), page.line), continued: true })
-      } else packed.push({ ...page, blocks: [...page.blocks] })
+        packed[packed.length - 1] = { ...last, section: page.section, blocks: [...last.blocks, ...heading, ...page.blocks.slice(0, count)] }
+        packed.push({ ...page, heading: [], blocks: page.blocks.slice(count), line: lineOf(page.blocks.slice(count), page.line), continued: true })
+      } else if (firstImageIdx < 0 && page.blocks.length > 0 && page.blocks[0].type !== 'heading') {
+        const parts = splitBlock(page.blocks[0], part => fits({ ...last, blocks: [...last.blocks, ...heading, part] }))
+        if (parts && blockPlainChars(parts[0]) >= 28) {
+          packed[packed.length - 1] = { ...last, section: page.section, blocks: [...last.blocks, ...heading, parts[0]] }
+          const rest = [parts[1], ...page.blocks.slice(1)]
+          packed.push({ ...page, heading: [], blocks: rest, line: lineOf(rest, page.line), continued: true })
+        } else {
+          packed.push({ ...page, blocks: [...page.blocks] })
+        }
+      } else {
+        packed.push({ ...page, blocks: [...page.blocks] })
+      }
     }
   }
   return numberPages(packed)
 }
 
+/** 同一节因 --- 手动换页或内容超长续页时，只在第一节首页印一次小标题，后续卡片不凭空重复幽灵标题。 */
+export function dedupeSectionHeadings(sections) {
+  const seen = new Set()
+  return sections.map((sec) => {
+    if (sec.kind === 'cover') {
+      seen.add(sec.section)
+      return sec
+    }
+    if (Number.isInteger(sec.section) && seen.has(sec.section)) {
+      return sec.heading?.length ? { ...sec, heading: [] } : sec
+    }
+    if (Number.isInteger(sec.section)) seen.add(sec.section)
+    return sec
+  })
+}
+
 /** 只切一节。界面里按节缓存，改了哪节只重切哪节。 */
-export function paginateSection(section, fits) {
+export function paginateSection(section, fits, { repeatHeading = true } = {}) {
   const pages = []
   const queue = [...section.blocks]
   let first = true
   do {
-    const page = { kind: first ? section.kind : 'content', heading: first || section.kind !== 'cover' ? section.heading : [], blocks: [], section: section.section, continued: !first, hardBreak: first && Boolean(section.hardBreak), ...(section.intro ? { intro: true } : {}) }
+    const keepHeading = first || (repeatHeading && section.kind !== 'cover')
+    const page = { kind: first ? section.kind : 'content', heading: keepHeading ? section.heading : [], blocks: [], section: section.section, continued: !first, hardBreak: first && Boolean(section.hardBreak), ...(section.intro ? { intro: true } : {}) }
     while (queue.length) {
       const block = queue[0]
       if (fits({ ...page, blocks: [...page.blocks, block] })) {
@@ -494,19 +571,28 @@ export function headerHeight(ctx) {
 
 /** 正文区的宽高：卡片减去主题内边距和页眉。 */
 export function bodyBox(ctx) {
-  return { width: ctx.width - ctx.pad.left - ctx.pad.right - 4, height: ctx.height - ctx.pad.top - ctx.pad.bottom - headerHeight(ctx) }
+  return { width: ctx.width - ctx.pad.left - ctx.pad.right, height: ctx.height - ctx.pad.top - ctx.pad.bottom - headerHeight(ctx) }
 }
 
-/** 一张图在卡片里的框：默认按原图比例放下（宽不超过正文宽，高不超过上限）；调过大小就用调过的。 */
+/** 一张图在卡片里的框：默认按原图比例放下（宽不超过正文宽，高不超过上限）；调过大小就按原图比例保持不裁剪。 */
 export function imageFrame(block, ctx, cover = false) {
   const state = cleanImageState(ctx.images?.[block.key])
   const box = bodyBox(ctx)
-  const maxH = Math.round(ctx.height * (cover ? 0.52 : 0.42))
+  const maxH = Math.round(ctx.height * (cover ? 0.44 : 0.40))
   const aspect = Number(block.width) > 0 && Number(block.height) > 0 ? block.width / block.height : 4 / 3
   const fitW = Math.min(box.width, maxH * aspect)
+  const baseW = Math.round(fitW * 10) / 10
+  const baseH = Math.max(IMAGE_LIMITS.min, Math.round((fitW / aspect) * 10) / 10)
   const width = Math.min(box.width, state.w ?? fitW)
-  const height = Math.min(box.height - 24, state.h ?? fitW / aspect)
-  return { width: Math.round(width * 10) / 10, height: Math.max(IMAGE_LIMITS.min, Math.round(height * 10) / 10), state }
+  const height = Math.min(box.height - 24, state.h ?? (state.w ? state.w / aspect : fitW / aspect))
+  return {
+    width: Math.round(width * 10) / 10,
+    height: Math.max(IMAGE_LIMITS.min, Math.round(height * 10) / 10),
+    baseW,
+    baseH,
+    aspect,
+    state,
+  }
 }
 
 /** 粗估一页正文的高度，单位 px。宁大勿小。 */
@@ -551,14 +637,14 @@ function userInfo(ctx, { avatar = true, time = true, nameExtra = '', idExtra = '
   }
   const meta = []
   if (sig.name) {
-    const icon = `<svg viewBox="0 0 22 22" style="${css('display: inline-block; flex: none; width: 18px; height: 18px', s.header.verifiedIcon)}"><path d="${VERIFIED}"></path></svg>`
+    const icon = `<svg viewBox="0 0 22 22" style="${css('display: inline-block; flex: none; width: 18px; height: 18px', s.header.verifiedIcon)}"><path fill-rule="evenodd" d="${VERIFIED}"></path></svg>`
     meta.push(div(css('display: flex; align-items: center; gap: 4px', s.header.nameContainer), div(css('font-size: 16px; font-weight: 600', s.header.userName, nameExtra), escapeHtml(sig.name)) + icon))
   }
   if (sig.id) meta.push(div(css('font-size: 14px', s.header.userId, idExtra), escapeHtml(sig.id)))
   if (meta.length) parts.push(div('display: flex; flex-direction: column; gap: 0;', meta.join('')))
   const right = time && sig.showDate && ctx.date ? div('font-size: 14px;', div(css(s.header.postTime), escapeHtml(ctx.date))) : ''
   if (!parts.length && !right && !trailing) return ''
-  return div(css('position: relative; display: flex; justify-content: space-between; align-items: center; line-height: normal; padding: 2px 2px 8px 2px', infoExtra), div('display: flex; align-items: center; gap: 8px; min-width: 0;', parts.join('')) + right + trailing)
+  return div(css('position: relative; display: flex; justify-content: space-between; align-items: center; line-height: normal; padding: 2px 0 5px 0', infoExtra), div('display: flex; align-items: center; gap: 8px; min-width: 0;', parts.join('')) + right + trailing)
 }
 
 function footerTexts(ctx) {
@@ -643,7 +729,7 @@ function shell(ctx) {
   }
 }
 
-// 封面：言起 styles.css 里 .red-cover 的几条 !important 规则，写成追加在后面的行内样式
+// 封面：言起 styles.css 里 .red-cover 的字号梯度，下方可直接排正文段落、列表与配图，不留空封面
 const COVER_TITLE = {
   'cover-classic': 'font-size: 2.05em; text-align: center',
   'cover-bold': 'font-size: 2.5em; text-align: left',
@@ -655,24 +741,29 @@ const COVER_TITLE = {
 function coverKicker(ctx) {
   if (ctx.cover === 'cover-mag') {
     const text = [(ctx.signature.name || 'NOTES').toUpperCase(), ctx.date].filter(Boolean).join(' · ')
-    return div('display: block; font-size: 0.7em; letter-spacing: 0.16em; opacity: 0.55; border-bottom: 1.5px solid currentColor; padding-bottom: 8px; margin-bottom: 14px;', escapeHtml(text))
+    return div('display: block; font-size: 0.7em; letter-spacing: 0.16em; opacity: 0.55; border-bottom: 1.5px solid currentColor; padding-bottom: 6px; margin-bottom: 10px;', escapeHtml(text))
   }
-  if (ctx.cover === 'cover-number') return div('display: block; font-size: 2.6em; font-weight: 800; line-height: 1; opacity: 0.85; margin-bottom: 4px;', '01')
+  if (ctx.cover === 'cover-number') return div('display: block; font-size: 2.2em; font-weight: 800; line-height: 1; opacity: 0.85; margin-bottom: 4px;', '01')
   return ''
 }
 
-function imageHtml(block, cover, ctx) {
+function imageHtml(block, cover, ctx, edge = {}) {
   // 只收已经转成 data URL 的图：导出时卡片里不能有任何外部地址
   if (!IMAGE_SRC.test(String(block.src ?? ''))) return ''
   const { s } = ctx
   const frame = imageFrame(block, ctx, cover)
   const { state } = frame
+  const geom = coverImageBox(frame.width, frame.height, frame.aspect)
   // 主题给图片的圆角、阴影、边框加在外框上（同言起 setupImageZoom 把它们挪到 .red-img-frame）
   const look = ['border-radius', 'box-shadow', 'border'].map(prop => cssValue(s.image, prop) && `${prop}: ${cssValue(s.image, prop)}`)
-  const keyAttr = ctx.lines && block.key ? ` data-img="${escapeHtml(block.key)}"` : ''
+  const keyAttr = ctx.lines && block.key
+    ? ` data-img="${escapeHtml(block.key)}" data-aspect="${frame.aspect.toFixed(5)}" data-base-w="${frame.baseW}" data-base-h="${frame.baseH}"`
+    : ''
   const lineAttr = ctx.lines && Number.isInteger(block.line) ? ` data-line="${block.line}"` : ''
-  const frameStyle = css('position: relative; display: block; overflow: hidden; line-height: 0; box-sizing: border-box; margin: 0.6em auto', ...look, `width: ${frame.width}px; max-width: 100%; height: ${frame.height}px`)
-  const img = `<img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.alt)}" draggable="false" style="${css('display: block; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; object-fit: cover; user-select: none', `transform: translate(${state.x}px, ${state.y}px) scale(${state.s}); transform-origin: center center`)}">`
+  const margin = edge.last ? 'margin: 0.42em auto 0' : 'margin: 0.45em auto'
+  const frameStyle = css(`position: relative; display: block; overflow: hidden; line-height: 0; box-sizing: border-box; ${margin}`, ...look, `width: ${frame.width}px; max-width: 100%; height: ${frame.height}px`)
+  // 使用 coverImageBox 渲染完整未预裁切的位图：四角等比缩放时 100% 完整无裁剪；上下/左右拉缩或缩放后可在框内自由拖动全景平移不露白边
+  const img = `<img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.alt)}" draggable="false" style="${css(`position: absolute; left: ${geom.left}px; top: ${geom.top}px; width: ${geom.imgW}px; height: ${geom.imgH}px; display: block; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; user-select: none`, `transform: translate(${state.x}px, ${state.y}px) scale(${state.s}); transform-origin: center center`)}">`
   return `<div${keyAttr}${lineAttr} style="${frameStyle}">${img}</div>`
 }
 
@@ -703,20 +794,24 @@ export function templateCover(page, ctx) {
 }
 
 /**
- * 封面检查：新封面用真实版式算，旧的 5 种按标题字号近似。
+ * 封面检查：新封面用真实版式算，旧的 5 种按标题字号与实际首页正文高度计算。
  * @returns {Array<{id: string, state: string, value: string}>}
  */
 export function checkCover(page, ctx) {
   const box = bodyBox(ctx)
-  const frame = { cardWidth: ctx.width, cardHeight: ctx.height, offsetX: ctx.pad.left + 2, offsetY: ctx.pad.top + headerHeight(ctx), title: plain(page.heading), article: ctx.article }
+  const frame = { cardWidth: ctx.width, cardHeight: ctx.height, offsetX: ctx.pad.left, offsetY: ctx.pad.top + headerHeight(ctx), title: plain(page.heading), article: ctx.article }
   if (isTemplateCover(ctx.cover)) return coverChecks(templateCover(page, ctx), frame)
-  const em = { 'cover-classic': 2.05, 'cover-bold': 2.5, 'cover-mag': 2.0, 'cover-number': 2.0, 'cover-min': 1.85 }[ctx.cover] ?? 2
+  const em = { 'cover-classic': 1.85, 'cover-bold': 1.95, 'cover-mag': 1.8, 'cover-number': 1.8, 'cover-min': 1.65 }[ctx.cover] ?? 1.9
   const size = ctx.size * em
   const perLine = Math.max(1, Math.floor(box.width / size))
-  const lines = Math.ceil(Array.from(frame.title).length / perLine)
+  const lines = Math.max(1, Math.ceil(Array.from(frame.title).length / perLine))
   const sw = coverLayout('cover-poster', box, { title: frame.title }, { theme: ctx.theme, font: ctx.font }).palette
-  const titleBox = { role: 'title', x: 12, y: 10, w: Math.min(box.width, Array.from(frame.title).length * size), h: lines * size * 1.2, size, lines: Array.from({ length: lines }, () => ''), fg: sw.title, bg: sw.bg, fits: true }
-  return coverChecks({ boxes: [titleBox], image: null }, frame)
+  const titleBox = { role: 'title', x: 4, y: 4, w: Math.min(box.width - 8, Array.from(frame.title).length * size), h: lines * size * 1.26, size, lines: Array.from({ length: lines }, () => ''), fg: sw.title, bg: sw.bg, fits: true }
+  const extraH = page.blocks?.length ? Math.min(Math.max(40, box.height - titleBox.h - 16), estimateHeight({ ...page, kind: 'content', heading: [] }, ctx)) : 0
+  const boxes = extraH > 0
+    ? [titleBox, { role: 'body', x: 4, y: titleBox.y + titleBox.h + 10, w: Math.max(60, box.width - 8), h: extraH, size: ctx.size, lines: [''], fg: sw.text ?? sw.title, bg: sw.bg, fits: true }]
+    : [titleBox]
+  return coverChecks({ boxes, image: null }, frame)
 }
 
 /**
@@ -737,9 +832,9 @@ export function renderCard(page, ctx) {
     codeSize: ctx.size,
     links: 'text',
     lines: ctx.lines,
-    // 封面正文：言起 .red-cover p 的规则
-    paragraph: cover ? `font-size: 1.04em; line-height: 1.52${ctx.cover === 'cover-classic' ? '; text-align: center' : '; text-align: left'}` : '',
-    image: block => imageHtml(block, cover, ctx),
+    // 首页正文与普通内容页完全同字号同行高，仅经典居中封面居中对齐
+    paragraph: cover && ctx.cover === 'cover-classic' ? 'text-align: center' : '',
+    image: (block, edge) => imageHtml(block, cover, ctx, edge),
     tableScale: block => cleanTableScale(ctx.tables?.[block.key] ?? 1),
     // 正文实际可用宽度：表格比它宽时按比例缩字号，不把列压成竖排
     bodyWidth: bodyBox(ctx).width,
@@ -748,27 +843,40 @@ export function renderCard(page, ctx) {
   if (fixed) {
     body = templateCover(page, ctx).html
   } else {
-    const heading = page.heading.length ? headingHtml(2, page.heading, blockCtx, { line: page.continued ? undefined : page.line, ...(cover ? { base: `margin: 0.25em 0 0.5em; line-height: 1.2; letter-spacing: -0.02em; ${COVER_TITLE[ctx.cover]}`, attr: ctx.lines ? ' data-slot="title"' : '' } : {}) }) : ''
-    body = (cover ? coverKicker(ctx) : '') + heading + page.blocks.map(block => blockHtml(block, blockCtx)).join('')
+    const hasHeading = page.heading.length > 0
+    const heading = hasHeading
+      ? headingHtml(2, page.heading, blockCtx, {
+        line: page.continued ? undefined : page.line,
+        ...(cover
+          ? { base: `margin: 0.08em 0 0.38em; line-height: 1.26; letter-spacing: -0.02em; ${COVER_TITLE[ctx.cover]}`, attr: ctx.lines ? ' data-slot="title"' : '' }
+          : { base: 'margin-top: 2px' }),
+      })
+      : ''
+    const totalBlocks = page.blocks.length
+    const blocksHtml = page.blocks.map((block, idx) => blockHtml(block, blockCtx, {
+      first: !hasHeading && idx === 0,
+      last: idx === totalBlocks - 1,
+    })).join('')
+    body = (cover ? coverKicker(ctx) : '') + heading + blocksHtml
   }
-  const section = css('display: block; box-sizing: border-box; height: 100%; margin: 0 2px; overflow: hidden', cover && !fixed && `position: relative; padding-top: 4%; font-size: ${ctx.size}px`)
+  const section = css('display: block; box-sizing: border-box; height: 100%; margin: 0; overflow: hidden', cover && !fixed && `position: relative; padding-top: 2px; font-size: ${ctx.size}px`)
   const { header, headerStyle, footer, footerStyle } = shell(ctx)
   const bg = ctx.background
   const root = css(
-    'position: relative; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; margin: 0; padding: 20px; text-align: left; font-weight: 400; font-style: normal; letter-spacing: normal; line-height: 1.5; white-space: normal; word-break: break-word; overflow-wrap: break-word; -webkit-font-smoothing: antialiased',
+    'position: relative; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; margin: 0; padding: 16px; text-align: left; font-weight: 400; font-style: normal; letter-spacing: normal; line-height: 1.5; white-space: normal; word-break: break-word; overflow-wrap: break-word; -webkit-font-smoothing: antialiased',
     `font-family: ${ctx.font}`,
     'font-size: 16px',
     color && `color: ${color}`,
     s.imagePreview,
-    `padding-top: 10px; width: ${ctx.width}px; height: ${ctx.height}px; box-sizing: border-box; border-radius: 0`,
+    `padding-top: 8px; width: ${ctx.width}px; height: ${ctx.height}px; box-sizing: border-box; border-radius: 0`,
     // 背景图（同言起 BackgroundManager）：盖在主题底色上，缩放和位置可调
     bg && `background-image: url(${bg.src}); background-size: ${Math.round(bg.scale * 1000) / 10}%; background-position: ${Math.round(bg.x)}px ${Math.round(bg.y)}px; background-repeat: no-repeat`,
   )
   const lock = fixed ? `height: ${headerHeight(ctx)}px; margin-top: 0; margin-bottom: 0; overflow: hidden` : ''
-  const headerHtml = header ? div(css('flex: 0 0 auto; padding-top: 0; padding-bottom: 4px; box-sizing: border-box', headerStyle, lock), header) : fixed && headerHeight(ctx) ? div(`flex: 0 0 auto; height: ${headerHeight(ctx)}px;`) : ''
+  const headerHtml = header ? div(css('flex: 0 0 auto; padding-top: 0; padding-bottom: 2px; box-sizing: border-box', headerStyle, lock), header) : fixed && headerHeight(ctx) ? div(`flex: 0 0 auto; height: ${headerHeight(ctx)}px;`) : ''
   const showFooter = footer && ctx.signature.showFooter !== false
   // 主题页脚的 backdrop-filter 去掉：卡片排成一长串时会拖垮绘制，导出成图片也画不出来
-  const footerHtml = showFooter ? div(css('box-sizing: border-box; min-height: 28px', s.footer.container, footerStyle, 'backdrop-filter: none; -webkit-backdrop-filter: none'), footer) : ''
+  const footerHtml = showFooter ? div(css('box-sizing: border-box; min-height: 24px', s.footer.container, footerStyle, 'backdrop-filter: none; -webkit-backdrop-filter: none'), footer) : ''
   const lineAttr = ctx.lines && Number.isInteger(page.line) ? ` data-line="${page.line}"` : ''
   return `<div${lineAttr} style="${root}">${headerHtml}<div style="flex: 1 1 auto; min-height: 0; overflow: hidden;"><section data-part="body" style="${section}">${body}</section></div>${footerHtml}</div>`
 }

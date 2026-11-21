@@ -1,9 +1,10 @@
-// 界面语言：中文写在代码里，英文按中文原文查表。跟随 DeepSeek Harness 的语言，设置里也能固定成中文或 English。
+// 界面语言：中文写在代码里，英文词典在切到 English 时按需懒加载（assets/en.json），首屏中文不解析近 300KB 词表。
 import React from 'react'
-import { EN } from './en/index.js'
 
 let preference = 'auto'
 let hostLang = readHostLang()
+let enDict = null
+let loadingEn = null
 const listeners = new Set()
 
 function readHostLang() {
@@ -16,14 +17,30 @@ function notify() {
   listeners.forEach(fn => fn())
 }
 
-if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-  new MutationObserver(() => {
-    const next = readHostLang()
-    if (next !== hostLang) {
-      hostLang = next
-      if (preference === 'auto') notify()
-    }
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+function ensureEnLoaded() {
+  if (enDict || loadingEn || typeof fetch === 'undefined') return
+  loadingEn = fetch('media-desk/assets/en.json')
+    .then(r => (r.ok ? r.json() : {}))
+    .then((data) => {
+      enDict = data && typeof data === 'object' ? data : {}
+      notify()
+    })
+    .catch(() => { enDict = {} })
+    .finally(() => { loadingEn = null })
+}
+
+if (typeof document !== 'undefined') {
+  if (hostLang === 'en') ensureEnLoaded()
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => {
+      const next = readHostLang()
+      if (next !== hostLang) {
+        hostLang = next
+        if (lang() === 'en') ensureEnLoaded()
+        if (preference === 'auto') notify()
+      }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+  }
 }
 
 /** 当前生效的语言：'zh' 或 'en'。 */
@@ -37,6 +54,7 @@ export function setLanguagePreference(value) {
   if (next === preference) return
   const before = lang()
   preference = next
+  if (lang() === 'en') ensureEnLoaded()
   if (lang() !== before) notify()
 }
 
@@ -56,7 +74,8 @@ export function useLang() {
  * @returns {string} 当前语言的文字。
  */
 export function t(zh, vars) {
-  const text = lang() === 'en' ? (EN[zh] ?? zh) : zh
+  if (lang() === 'en' && !enDict) ensureEnLoaded()
+  const text = lang() === 'en' && enDict ? (enDict[zh] ?? zh) : zh
   if (!vars) return text.includes('{s}') ? text.replace(/\{s\}/g, 's') : text
   return text.replace(/\{(\w+)\}/g, (match, key) => {
     if (vars[key] !== undefined) return String(vars[key])
@@ -64,6 +83,12 @@ export function t(zh, vars) {
     if (key === 's') return Number(String(vars.n ?? '').replace(/,/g, '')) === 1 ? '' : 's'
     return match
   })
+}
+
+/** 按需读取已加载的英文词典项。 */
+export function lookupEn(key) {
+  if (lang() === 'en' && !enDict) ensureEnLoaded()
+  return enDict ? enDict[key] : undefined
 }
 
 /** 英文要加空格和复数的地方用这个：n 为 1 时取 one，否则取 other。 */
