@@ -2,7 +2,7 @@
 
 <h1 align="center">Adong IP Desk · Community Edition</h1>
 
-<p align="center">阿东IP工作台 · a content desk plugin for DeepSeek Harness</p>
+<p align="center">From an idea to articles, image cards, spoken scripts and video — a local-first workspace powered by DeepSeek Harness.</p>
 
 <p align="center">
   <a href="#install">Install</a> ·
@@ -24,6 +24,10 @@ The first time you open the desk, a **How to use** panel appears. It offers five
 
 <br>
 
+**Community edition 0.1.0** · [Source code](https://github.com/adongwanai/adong-media-desk) · [Download](https://github.com/adongwanai/adong-media-desk/releases/tag/v0.1.0) · [简体中文](README.md)
+
+Install it on your own computer, connect your DSH model, and bring your own accounts, writing style and reference materials. Start with one topic, draft through a continuous Agent conversation, then adapt the result into articles, image cards or a spoken script for the video workspace. New installations have no author accounts, posts, signatures or credentials.
+
 ## Screenshots
 
 | | |
@@ -41,10 +45,11 @@ Screenshots retain the author’s original account data to show real usage. Fres
 - **Dashboard**: total followers with today / 7-day / 30-day change, daily net gain for 30 days, the latest posts, a few rule-based observations (no model call), and one card per platform. Cards show where each number came from and when it was read, up to four account stats, a 30-day trend and the latest post.
   - **How the follower total is computed**: the latest recorded follower count of each platform, summed. **GitHub stars are included. Google Scholar citations are not** (the Scholar card still shows them). When some platforms have no number, the total says how many platforms it covers.
   - **Income tile**: today, this month, total and recent entries. You log each payment yourself (amount, date, source, which post it came from, note). Nothing is connected to a payment service and nothing is estimated.
-- **Sources**: any RSS / Atom feed, a 14-feed starter catalog, four built-in public sources (two follow-builders feeds, HF Daily Papers, a Chinese AI news digest), and 10 login-free trending lists (GitHub Trending, Hacker News, Weibo, Bilibili, Baidu, Zhihu, Toutiao, Juejin, SSPAI, Douyin). Optional topic words re-rank items.
+- **Sources**: any RSS / Atom feed, a 14-feed starter catalog, four built-in public sources (two follow-builders feeds, HF Daily Papers, a Chinese AI news digest), and 10 login-free trending lists (GitHub Trending, Hacker News, Weibo, Bilibili, Baidu, Zhihu, Toutiao, Juejin, SSPAI, Douyin). Optional topic words re-rank items. Cached results appear first; automatic checks run once per Beijing calendar day, and new subscriptions fetch independently. You can also refresh manually.
 - **Ideas**: quick capture (`⌘⇧I` / `Ctrl+Shift+I`) anywhere in DSH, search and tags, a topic score card, a daily review of old ideas, and read-only import of a Markdown / Obsidian folder.
-- **Draft**: native DSH Agent sessions with streamed text, reasoning/tool activity and a live document preview. The same draft retains its conversation context. References and skills are loaded on demand. Upstream's titles, covers, images and storyboards are still there. 16 style presets, plus styles extracted from your own posts or links.
-- **Layout**: 言起 YANQI themes for long articles and image cards (30 themes, 12 card skeletons, 14 fonts, 16 cover styles), side-by-side editor and preview, PNG / ZIP export.
+- **Draft**: native DSH Agent sessions with streamed text, reasoning/tool activity and a live document preview. The same draft retains its conversation context. References and installed skills are loaded on demand. Start with a single topic; audience, core judgment and writing mode are optional. Switch between body text, long-form layout, image cards and a separate spoken script, then import that script into Video. Upstream's titles, covers, images and storyboards are still there. 16 generic style presets, plus styles extracted from your own posts or links.
+- **Revisions**: edit a selected passage, request a focused change in chat, or restore a saved draft snapshot. Chat edits can use native file tools and update the preview directly. Selection-only rewrites use DSH's lightweight model service with nearby text and style hints; they do not load the full Agent context or Skills. Use chat for research, tool use and continuing conversations.
+- **Layout**: 言起 YANQI themes for long articles and image cards (30 themes, 12 card skeletons, 14 fonts, 16 cover styles), side-by-side editor and preview, PNG / ZIP export. Choose a title-only cover or compact flow, resize images from edges and corners, highlight key text and turn article links into footnotes. Card identity starts blank; fill in your own details or import your own YANQI `note-to-red` settings from a configured Obsidian vault.
 - **Platform versions**: one version each for RedNote (body plus a separate image-card version), Douyin, Bilibili, WeChat Channels, Zhihu, Toutiao, X, YouTube, TikTok and Instagram, with a local self-check and one targeted revision for failing items.
 - **Publish**:
   - **Copy & open** copies a platform's version and opens its publish page.
@@ -96,7 +101,7 @@ The plugin ships with no keys. Anything you don't configure is simply unavailabl
 | Video export to MP4 | ffmpeg (lossless export also needs ffprobe) |
 | Overseas feeds, HF papers, X profile data | Network access to those sites (a proxy in mainland China) |
 
-Keys are stored only in the local `settings.json` (file mode 600). They are never sent to the browser or to the model.
+Plugin credentials are stored in the local `settings.json` (file mode 600), excluded from browser responses and model prompts, and sent only to their configured services when needed. Native chats use DSH sessions and tools; dashboard number extraction and selection-only rewrites use DSH’s lightweight model service, with a native-task fallback.
 
 <br>
 
@@ -154,7 +159,7 @@ npm run dsh
 
 The launcher builds and installs `dsh-ip-workbench` into its own DSH home, `~/.dsh-ip-workbench`, then opens port 4372. Sign in with your own DSH model account and open **Adong IP Desk** from the sidebar. Set `DSH_BIN` if the CLI is not in PATH; change the port with `npm run dsh -- 4382`.
 
-`npm start` opens a standalone UI preview without native AI. Stop it before running DSH on the same port. No personal author style, private documents, credentials or account sessions are included. Configure your own style and reference paths in Settings; native DSH handles skill discovery and selective reading.
+`npm start` opens a standalone UI preview without native AI. Stop it before running DSH on the same port. No personal author style, private documents, credentials or account sessions are included. Configure your own style and reference paths in Settings. The default writing workspace indexes `CLAUDE.md`, `style.md`, `voice/`, `examples/` and `methods/`; native DSH handles installed-skill discovery and selective reading. Private author Skills and third-party paid materials are not bundled.
 
 Data lives in `~/.dsh-ip-workbench/ip-workbench/`. Use `IP_WORKBENCH_HOME` to change the isolated DSH home, and `IP_WORKBENCH_WORKSPACE` to explicitly select your writing workspace. Templates never overwrite existing files. If installing manually into another profile, data uses `$DSH_HOME/ip-workbench`; do not enable this edition and upstream Media Desk in the same profile because they share panel/API IDs.
 
@@ -178,4 +183,4 @@ Uninstalling does not delete data. See [acceptance evidence](docs/ACCEPTANCE.md)
 - **Trademarks**: platform logos belong to their owners and are used only to identify platforms. This is a community plugin, not affiliated with DeepSeek or any content platform.
 - **License**: [MIT](LICENSE).
 
-**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. Report bugs via [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues) and security issues privately via [GitHub Security Advisories](https://github.com/adongwanai/adong-media-desk/security/advisories/new).
+**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. Report bugs via [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues), including Node / DSH versions, reproduction steps and redacted logs. Arrange a private channel with the maintainer before sharing vulnerability details.
