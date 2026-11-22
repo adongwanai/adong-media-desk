@@ -5,6 +5,7 @@
 <p align="center">From an idea to articles, image cards, spoken scripts and video — a local-first workspace powered by DeepSeek Harness.</p>
 
 <p align="center">
+  <a href="#new-and-expanded-capabilities">What’s new</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-you-need-to-set-up">Setup</a> ·
   <a href="#what-it-does-not-do">What it doesn't do</a> ·
@@ -12,21 +13,38 @@
   <a href="README.md">简体中文</a>
 </p>
 
-Adong IP Desk is a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH). It opens as a full-page desk in the sidebar. It is a fork of [dsh-media-desk](https://github.com/woniuniuniu/dsh-media-desk) (MIT) by [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3), extended by 阿东玩AI on top of upstream 2.7.0. All data stays on your machine, text generation uses the model you configured in DSH, and publishing stops at drafts (WeChat Official Accounts can publish after you confirm each time). You always press the final publish button yourself.
+**Adong IP Desk brings topic discovery, writing, image-card layout, spoken video and account analytics into one local workspace.** Save an interesting story as an idea, turn a topic into a draft, and adapt it into an article, image cards, a spoken script or platform-specific copy. Then schedule it, prepare supported platform drafts and review its performance.
+
+It runs inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH). Ask the Agent to research, read your materials, add images and revise your draft in one ongoing conversation. Tool activity is visible and the document preview updates as work progresses. Bring your own accounts, style and references; drafts and settings are stored locally, and model requests use services configured in DSH.
 
 ```
 Sources → Ideas → Draft → Layout → Platform versions → Publish (to drafts) → Data → Benchmarks     plus: Video
 ```
+
+**Community edition 0.1.0** · [Source code](https://github.com/adongwanai/adong-media-desk) · [Download](https://github.com/adongwanai/adong-media-desk/releases/tag/v0.1.0) · [简体中文](README.md)
+
+Fresh installations start empty, with your own workspace and settings. Configure your accounts and preferred writing style after installation.
+
+## New and expanded capabilities
+
+| Capability | What you can do |
+| --- | --- |
+| **Native DSH Agent creation** | Research, draft, add images and revise in one persistent conversation, with visible tool activity and streamed document updates. |
+| **Topic radar and daily briefing** | Combine RSS, trending lists and primary sources; turn cached stories into up to five topic suggestions with angles and source links. |
+| **Your writing style and references** | Use style cards, rules, voice samples and past work selectively; optionally specify an audience, writing mode and core judgment. |
+| **Six views for one piece** | Switch between body text, long-form layout, image cards, spoken script, video editing and platform versions. Keep the spoken script separate and import it into Video. |
+| **Focused edits and draft history** | Rewrite a selected passage, request a change in chat, inspect red/green differences and restore a saved revision. |
+| **Cards and long-form layout** | Use 30 themes, title-only covers, compact flow, manual page breaks, highlights, image resizing and article footnotes; export cards to PNG / ZIP. |
+| **Images and Obsidian integration** | Use native tools, installed Skills or a configured image service; sync workspace images into the draft and import your own YANQI profile and theme settings. |
+| **Spoken script to video** | Record with a teleprompter, camera or screen; import media, trim pauses, add captions and render templates. MP4 export uses local ffmpeg. |
+| **Account operations and review** | Track followers, growth and income, compare creators, review individual posts, schedule content and prepare supported platform drafts. |
+| **Independent setup and faster loading** | Start with a clean workspace, show cached sources first, check for updates daily, load English translations on demand and compress undo records. |
 
 Pages: Dashboard · Sources · Ideas · Content · Schedule · Publish · Video · Insights · Benchmarks, with Writing style in the top-right corner. The interface is in Chinese and English. The Chinese README is the more detailed and authoritative one; this is a shorter summary.
 
 The first time you open the desk, a **How to use** panel appears. It offers five paths (a sponsored post, a trending topic, moving old drafts in, a morning check, a talking-head video). Each step is one sentence with a **Take me there** button. Reopen it any time from the `?` icon at the top right or from the command palette.
 
 <br>
-
-**Community edition 0.1.0** · [Source code](https://github.com/adongwanai/adong-media-desk) · [Download](https://github.com/adongwanai/adong-media-desk/releases/tag/v0.1.0) · [简体中文](README.md)
-
-Install it on your own computer, connect your DSH model, and bring your own accounts, writing style and reference materials. Start with one topic, draft through a continuous Agent conversation, then adapt the result into articles, image cards or a spoken script for the video workspace. New installations have no author accounts, posts, signatures or credentials.
 
 ## Screenshots
 
@@ -47,9 +65,9 @@ Screenshots retain the author’s original account data to show real usage. Fres
   - **Income tile**: today, this month, total and recent entries. You log each payment yourself (amount, date, source, which post it came from, note). Nothing is connected to a payment service and nothing is estimated.
 - **Sources**: any RSS / Atom feed, a 14-feed starter catalog, four built-in public sources (two follow-builders feeds, HF Daily Papers, a Chinese AI news digest), and 10 login-free trending lists (GitHub Trending, Hacker News, Weibo, Bilibili, Baidu, Zhihu, Toutiao, Juejin, SSPAI, Douyin). Optional topic words re-rank items. Cached results appear first; automatic checks run once per Beijing calendar day, and new subscriptions fetch independently. You can also refresh manually.
 - **Ideas**: quick capture (`⌘⇧I` / `Ctrl+Shift+I`) anywhere in DSH, search and tags, a topic score card, a daily review of old ideas, and read-only import of a Markdown / Obsidian folder.
-- **Draft**: native DSH Agent sessions with streamed text, reasoning/tool activity and a live document preview. The same draft retains its conversation context. References and installed skills are loaded on demand. Start with a single topic; audience, core judgment and writing mode are optional. Switch between body text, long-form layout, image cards and a separate spoken script, then import that script into Video. Upstream's titles, covers, images and storyboards are still there. 16 generic style presets, plus styles extracted from your own posts or links.
+- **Draft**: native DSH Agent sessions with streamed text, reasoning/tool activity and a live document preview. The same draft retains its conversation context. References and installed skills are loaded on demand. Start with a single topic; audience, core judgment and writing mode are optional. Switch between body text, long-form layout, image cards and a separate spoken script, then import that script into Video. Generate title candidates, covers, illustrations and storyboards as needed. 16 generic style presets, plus styles extracted from your own posts or links.
 - **Revisions**: edit a selected passage, request a focused change in chat, or restore a saved draft snapshot. Chat edits can use native file tools and update the preview directly. Selection-only rewrites use DSH's lightweight model service with nearby text and style hints; they do not load the full Agent context or Skills. Use chat for research, tool use and continuing conversations.
-- **Layout**: 言起 YANQI themes for long articles and image cards (30 themes, 12 card skeletons, 14 fonts, 16 cover styles), side-by-side editor and preview, PNG / ZIP export. Choose a title-only cover or compact flow, resize images from edges and corners, highlight key text and turn article links into footnotes. Card identity starts blank; fill in your own details or import your own YANQI `note-to-red` settings from a configured Obsidian vault.
+- **Layout**: shared themes for long articles and image cards (30 themes, 12 card skeletons, 14 fonts, 16 cover styles), side-by-side editor and preview, PNG / ZIP export. Choose a title-only cover or compact flow, resize images from edges and corners, highlight key text and turn article links into footnotes. Card identity starts blank; fill in your own details or import your own YANQI `note-to-red` settings from a configured Obsidian vault.
 - **Platform versions**: one version each for RedNote (body plus a separate image-card version), Douyin, Bilibili, WeChat Channels, Zhihu, Toutiao, X, YouTube, TikTok and Instagram, with a local self-check and one targeted revision for failing items.
 - **Publish**:
   - **Copy & open** copies a platform's version and opens its publish page.
@@ -78,12 +96,6 @@ Screenshots retain the author’s original account data to show real usage. Fres
 - **Refresh and limits**: public data also refreshes when the Dashboard opens and is more than 6 hours old. Manual reads of the same dashboard are at least 10 minutes apart. Platforms that failed in a run are retried once after 20 minutes and once more 40 minutes later. Platforms that need a new login, or whose follower count is waiting for confirmation, are not retried. When a dashboard redirects to a login page or comes back empty, a screenshot is kept in the local `files/` folder (at most 3 per platform).
 - **Your account, your risk**: it uses your own login, so frequent reads may trigger platform risk controls.
 
-**Removed third-party data integrations.** Two data features that relied on outside services are gone:
-
-- upstream's account import through the paid third-party service Monid;
-- this fork's earlier "read data" feature (backfilling post stats from public links, and WeChat official statistics).
-
-The three sources above are now the only ones.
 
 <br>
 
@@ -147,7 +159,7 @@ The full list is in the [Chinese README](README.md#已知限制与未验证).
 
 Requirements: Node.js 24+, npm and official DSH. The community edition is currently checked on macOS with DSH 0.2.2-rc.1.
 
-This edition is not on npm or the plugin market (`dsh-media-desk` on npm installs upstream). Clone the repository (or grab an archive from [Releases](https://github.com/adongwanai/adong-media-desk/releases)) and run:
+This edition is not on npm or the plugin market (`dsh-media-desk` on npm does not install this edition). Clone the repository (or grab an archive from [Releases](https://github.com/adongwanai/adong-media-desk/releases)) and run:
 
 ```bash
 git clone https://github.com/adongwanai/adong-media-desk.git
@@ -160,15 +172,26 @@ The launcher builds and installs `dsh-ip-workbench` into its own DSH home, `~/.d
 
 `npm start` opens a standalone UI preview without native AI. Stop it before running DSH on the same port. No personal author style, private documents, credentials or account sessions are included. Configure your own style and reference paths in Settings. The default writing workspace indexes `CLAUDE.md`, `style.md`, `voice/`, `examples/` and `methods/`; native DSH handles installed-skill discovery and selective reading. Private author Skills and third-party paid materials are not bundled.
 
-Data lives in `~/.dsh-ip-workbench/ip-workbench/`. Use `IP_WORKBENCH_HOME` to change the isolated DSH home, and `IP_WORKBENCH_WORKSPACE` to explicitly select your writing workspace. Templates never overwrite existing files. If installing manually into another profile, data uses `$DSH_HOME/ip-workbench`; do not enable this edition and upstream Media Desk in the same profile because they share panel/API IDs.
+Data lives in `~/.dsh-ip-workbench/ip-workbench/`. Use `IP_WORKBENCH_HOME` to change the isolated DSH home, and `IP_WORKBENCH_WORKSPACE` to explicitly select your writing workspace. Templates never overwrite existing files. If installing manually into another profile, data uses `$DSH_HOME/ip-workbench`; do not enable this edition and `dsh-media-desk` in the same profile because they share panel/API IDs.
 
 Uninstalling does not delete data. See [acceptance evidence](docs/ACCEPTANCE.md) and [release notes](RELEASE.md). The package is `private: true` to prevent accidental npm publication, while MIT source distribution and local installation remain available.
 
 <br>
 
+### Development
+
+**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. Report bugs via [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues), including Node / DSH versions, reproduction steps and redacted logs. Arrange a private channel with the maintainer before sharing vulnerability details.
+
+<br>
+
 ## Credits and license
 
-- **Upstream**: [dsh-media-desk](https://github.com/woniuniuniu/dsh-media-desk) by [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3), MIT. The idea wall, drafting pipeline, schedule, insights, styles and image generation come from upstream. [Contributors](https://github.com/woniuniuniu/dsh-media-desk/graphs/contributors).
+### Upstream relationship
+
+This project is forked from [dsh-media-desk](https://github.com/woniuniuniu/dsh-media-desk) (MIT), created by [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3), and extended by 阿东玩AI from upstream 2.7.0. The idea wall, drafting pipeline, schedule, insights, styles and image generation come from upstream. The additions and improvements are described in “New and expanded capabilities” above. Thanks to the [upstream contributors](https://github.com/woniuniuniu/dsh-media-desk/graphs/contributors).
+
+**Removed third-party data integrations.** The account import through the paid service Monid and this fork's earlier "read data" feature (backfilling post stats from public links, and WeChat official statistics) have been removed. The three methods listed under Data collection are the available sources.
+
 - **Plugin system**: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 - **Included or ported work** (details in [NOTICE](NOTICE)):
   - [言起 YANQI](https://github.com/adongwanai/yanqi-obsidian) by 阿东玩AI. The parts in this repo are MIT by the author's grant. It is derived from [Note to RED](https://github.com/Yeban8090/note-to-red) by Yeban8090 (MIT). Keep attribution to both.
@@ -181,5 +204,3 @@ Uninstalling does not delete data. See [acceptance evidence](docs/ACCEPTANCE.md)
 - **Ideas only, no code used**: capwise, ScriptCut, LosslessCut, [Wechatsync](https://github.com/wechatsync/Wechatsync) (the desk talks to your installed extension over its public local protocol), and baoyu-post-to-wechat.
 - **Trademarks**: platform logos belong to their owners and are used only to identify platforms. This is a community plugin, not affiliated with DeepSeek or any content platform.
 - **License**: [MIT](LICENSE).
-
-**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. Report bugs via [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues), including Node / DSH versions, reproduction steps and redacted logs. Arrange a private channel with the maintainer before sharing vulnerability details.
