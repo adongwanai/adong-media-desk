@@ -137,7 +137,6 @@ Plugin credentials are stored in the local `settings.json` (file mode 600), excl
 - The model sometimes reads the wrong one of two adjacent numbers on a dashboard page. Followers are guarded by the "more than half" rule; other stats are not.
 - Smaller models may still produce unsupported first-person sentences. The self-check flags them.
 - RedNote length budgets are often exceeded by dense technical posts.
-- On a fresh install, the source list may be empty until the first restart.
 - Below about 1300px width, the assistant panel covers buttons on the right.
 
 The full list is in the [Chinese README](README.md#已知限制与未验证).
