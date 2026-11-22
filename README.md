@@ -256,9 +256,11 @@
 
 ### 从源码装进独立 DSH
 
-本版包名为 `dsh-ip-workbench`，还没有发布到 npm 或插件市场。上游 npm 包 `dsh-media-desk` 装的是上游版本。下载并解压本版源码，在项目目录运行：
+本版包名为 `dsh-ip-workbench`，还没有发布到 npm 或插件市场。上游 npm 包 `dsh-media-desk` 装的是上游版本。克隆仓库（或从 [Releases](https://github.com/adongwanai/adong-media-desk/releases) 下载压缩包）后，在项目目录运行：
 
 ```bash
+git clone https://github.com/adongwanai/adong-media-desk.git
+cd adong-media-desk
 npm ci
 npm run dsh
 ```
@@ -408,7 +410,7 @@ npm start         # 构建后独立运行，http://127.0.0.1:4372/
 | `docs/preview/` | 本 README 的界面截图 |
 | `docs/assets/` | 上游 README 的展示图 |
 
-正式公开仓库时会补充安全问题报告入口；不要在公开反馈中附上密钥或登录信息。
+问题反馈请提交 [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues)，安全问题请通过 [GitHub Security Advisories](https://github.com/adongwanai/adong-media-desk/security/advisories/new) 私下报告；不要在公开反馈中附上密钥或登录信息。
 
 
 ### 本地 DSH 原生 Agent 对话（2026-11-18）

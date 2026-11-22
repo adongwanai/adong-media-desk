@@ -31,6 +31,12 @@
     "dsh-plugin"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adongwanai/adong-media-desk.git"
+  },
+  "homepage": "https://github.com/adongwanai/adong-media-desk#readme",
+  "bugs": "https://github.com/adongwanai/adong-media-desk/issues",
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node scripts/build.mjs && node scripts/standalone.mjs",

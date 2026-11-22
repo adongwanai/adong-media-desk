@@ -4,7 +4,7 @@
 // 配色只取主题的颜色（底色、标题色、正文色、强调色），强调色做色块时上面的字按对比度选黑或白；
 // 强调色直接当字色时，必须和底色有足够对比度，不够就换成标题色（浅色强调色用作色块，避免直接作为白底文字）。
 import { fitText, textWidth } from './fit.js'
-import { contrastRatio, css, escapeHtml, inkOn, mixColor, themeSwatch } from './yanqi.js'
+import { contrastRatio, coverImageBox, css, escapeHtml, inkOn, mixColor, themeSwatch } from './yanqi.js'
 
 /** 新增的封面模板。name / hint 是中文原文，界面显示时再翻译。 */
 export const COVER_TEMPLATES = [
@@ -120,13 +120,15 @@ function badge(model, role, value, x, y, h, maxW, align = 'left') {
   return text(model, role, value, { x: left + h * 0.45, y: y + (h - size * 1.2) / 2, w: width - h * 0.9, h: size * 1.2 + 1 }, { maxLines: 1, max: size, min: 9, color: model.palette.onAccent, on: model.palette.accentFill, weight: 700, lineHeight: 1.2, safety: 0.98, ellipsis: true })
 }
 
-/** 配图槽：图片铺满槽位（object-fit: cover），可带拖动缩放的记忆和渐隐遮罩。 */
+/** 配图槽：图片按原图比例铺满槽位，可带拖动缩放的记忆和渐隐遮罩。 */
 function picture(model, box, { radius = 0, mask = '' } = {}) {
   const image = model.data.image
   if (!image?.src) return false
   const state = model.imageState?.(image) ?? { s: 1, x: 0, y: 0 }
-  const keyAttr = model.lines && image.key ? ` data-img="${escapeHtml(image.key)}" data-fixed="1"` : ''
-  const img = `<img src="${escapeHtml(image.src)}" alt="" draggable="false" style="${css('display: block; width: 100%; height: 100%; object-fit: cover; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; user-select: none', `transform: translate(${round(state.x)}px, ${round(state.y)}px) scale(${state.s}); transform-origin: center center`)}">`
+  const aspect = Number(image.width) > 0 && Number(image.height) > 0 ? image.width / image.height : 4 / 3
+  const geom = coverImageBox(round(box.w), round(box.h), aspect)
+  const keyAttr = model.lines && image.key ? ` data-img="${escapeHtml(image.key)}" data-fixed="1" data-aspect="${aspect.toFixed(5)}"` : ''
+  const img = `<img src="${escapeHtml(image.src)}" alt="" draggable="false" style="${css(`position: absolute; left: ${geom.left}px; top: ${geom.top}px; width: ${geom.imgW}px; height: ${geom.imgH}px; display: block; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; user-select: none`, `transform: translate(${round(state.x)}px, ${round(state.y)}px) scale(${state.s}); transform-origin: center center`)}">`
   const overlay = mask ? `<div style="${css('position: absolute; inset: 0; pointer-events: none', `background: ${mask}`)}"></div>` : ''
   model.parts.push(`<div${keyAttr} style="${css(`position: absolute; left: ${round(box.x)}px; top: ${round(box.y)}px; width: ${round(box.w)}px; height: ${round(box.h)}px; overflow: hidden; line-height: 0; border-radius: ${radius}px`)}">${img}${overlay}</div>`)
   model.image = { ...box }

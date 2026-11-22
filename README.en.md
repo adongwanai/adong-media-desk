@@ -143,9 +143,11 @@ The full list is in the [Chinese README](README.md#已知限制与未验证).
 
 Requirements: Node.js 24+, npm and official DSH. The community edition is currently checked on macOS with DSH 0.2.2-rc.1.
 
-This source preview is not on npm or the plugin market. The upstream `dsh-media-desk` package does not install this edition. From the extracted source directory:
+This edition is not on npm or the plugin market (`dsh-media-desk` on npm installs upstream). Clone the repository (or grab an archive from [Releases](https://github.com/adongwanai/adong-media-desk/releases)) and run:
 
 ```bash
+git clone https://github.com/adongwanai/adong-media-desk.git
+cd adong-media-desk
 npm ci
 npm run dsh
 ```
@@ -176,4 +178,4 @@ Uninstalling does not delete data. See [acceptance evidence](docs/ACCEPTANCE.md)
 - **Trademarks**: platform logos belong to their owners and are used only to identify platforms. This is a community plugin, not affiliated with DeepSeek or any content platform.
 - **License**: [MIT](LICENSE).
 
-**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. A public repository and its reporting channels have not been published yet.
+**Development**: `npm test`, `npm run build`, `npm run watch`, `npm start`. Never include keys, cookies or session tokens in issue reports. Report bugs via [GitHub Issues](https://github.com/adongwanai/adong-media-desk/issues) and security issues privately via [GitHub Security Advisories](https://github.com/adongwanai/adong-media-desk/security/advisories/new).

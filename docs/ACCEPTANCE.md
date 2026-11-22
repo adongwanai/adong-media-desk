@@ -26,4 +26,4 @@
 
 ## 分发状态
 
-这是本地源码交付，尚未创建公开远程仓库、推送代码、发布 npm 或提交插件市场。当前已知产品限制仍保留在 README 中。
+公开源码仓库为 <https://github.com/adongwanai/adong-media-desk>（含 `v0.1.0` Release 插件安装包与源码归档），使用干净独立 Git 历史；尚未发布 npm 或提交插件市场。当前已知产品限制仍保留在 README 中。

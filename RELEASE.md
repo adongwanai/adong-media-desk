@@ -4,9 +4,9 @@
 
 ## 当前分发方式
 
-- 源码目录 / 源码压缩包：安装依赖后运行 `npm run dsh`。
-- `npm pack` 生成的插件包：由 DSH 本地插件安装功能加载。
-- 尚未创建公开 GitHub 仓库、推送代码、发布 npm 或提交插件市场。
+- 公开源码仓库：<https://github.com/adongwanai/adong-media-desk>（克隆或下载源码后运行 `npm ci && npm run dsh`）。
+- GitHub Releases / `npm pack` 生成的插件包（`dsh-ip-workbench-0.1.0.tgz`）：可由 DSH 本地插件安装功能直接加载。
+- 尚未发布到 npm 或提交插件市场（`package.json` 保持 `private: true` 防误发）。
 
 ## 发布前
 
