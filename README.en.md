@@ -5,6 +5,7 @@
 <p align="center">From an idea to articles, image cards, spoken scripts and video — a local-first workspace powered by DeepSeek Harness.</p>
 
 <p align="center">
+  <a href="#why-build-a-public-body-of-work">Why share your work</a> ·
   <a href="#new-and-expanded-capabilities">What’s new</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-you-need-to-set-up">Setup</a> ·
@@ -12,6 +13,16 @@
   <a href="#known-limitations-and-unverified-parts">Known limitations</a> ·
   <a href="README.md">简体中文</a>
 </p>
+
+## Why build a public body of work?
+
+> Your personal brand is a résumé that people can explore, with new evidence added as you work. — Adong
+
+Papers, open-source projects, real Agent execution traces and the decisions you make along the way help people understand what you can do. Whether you are a student, looking for a job, building a product or working independently, sharing that work gives others something concrete to assess and a reason to get in touch.
+
+Recruiters, investors and potential collaborators have already reached out to me after seeing my GitHub projects and content. I expect public profiles and work to take on more of the role that résumés play today. Keeping a record of what you tried, what worked and how you thought about it lets people get to know your work over time.
+
+Publishing consistently also takes time: choosing topics, organizing references, revising, formatting and adapting each piece for different platforms. Adong IP Desk connects those steps so you can spend more time on your own ideas and practice.
 
 **Adong IP Desk brings topic discovery, writing, image-card layout, spoken video and account analytics into one local workspace.** Save an interesting story as an idea, turn a topic into a draft, and adapt it into an article, image cards, a spoken script or platform-specific copy. Then schedule it, prepare supported platform drafts and review its performance.
 
@@ -51,10 +62,12 @@ The first time you open the desk, a **How to use** panel appears. It offers five
 | | |
 | --- | --- |
 | ![Dashboard](docs/preview/board.png) | ![Sources](docs/preview/sources.png) |
-| ![Draft](docs/preview/studio.png) | ![Platform versions](docs/preview/versions.png) |
+| ![Draft: six views and chapter outline](docs/preview/studio-current.jpg) | ![Long-form layout](docs/preview/layout-current.jpg) |
+| ![Image cards and layout checks](docs/preview/cards-current.jpg) | ![Spoken script and sentence timing](docs/preview/spoken-current.jpg) |
+| ![Video workspace with an imported script](docs/preview/video-current.jpg) | ![Platform versions](docs/preview/versions.png) |
 | ![Publish](docs/preview/publish.png) | ![Insights](docs/preview/insights.png) |
 
-Screenshots retain the author’s original account data to show real usage. Fresh installations start empty; the accounts and content pictured are not imported, and no credentials or personal style are bundled.
+Account screenshots retain the author’s real usage data. The five creation screenshots were updated on November 22, 2026, using a manually prepared excerpt of the author's note about building a personal brand. They show the current community edition's standalone preview; “Not connected” means that preview has no DSH connection. Install inside DSH for AI conversations. Fresh installations start empty; pictured accounts and drafts, credentials and personal writing styles are not bundled.
 
 <br>
 
